@@ -12,19 +12,23 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// =========================
-// MEMÓRIA POR NÚMERO
-// =========================
+// =============================
+// MEMÓRIA
+// =============================
 const conversations = {};
 
-// =========================
-// DATA INTELIGENTE (+5 DIAS)
-// =========================
+// =============================
+// DATA INTELIGENTE
+// =============================
 function getNextBusinessDay() {
   let date = new Date();
   date.setDate(date.getDate() + 5);
 
-  while (date.getDay() === 0 || date.getDay() === 1 || date.getDay() === 6) {
+  while (
+    date.getDay() === 0 ||
+    date.getDay() === 1 ||
+    date.getDay() === 6
+  ) {
     date.setDate(date.getDate() + 1);
   }
 
@@ -40,48 +44,127 @@ function formatDate(date) {
   });
 }
 
+// =============================
+// EXTRAIR NOME
+// =============================
+function extractName(message) {
+  const patterns = [
+    /me chamo\s+([a-zA-ZÀ-ú]+)/i,
+    /meu nome é\s+([a-zA-ZÀ-ú]+)/i,
+    /sou a\s+([a-zA-ZÀ-ú]+)/i,
+    /sou o\s+([a-zA-ZÀ-ú]+)/i,
+  ];
+
+  for (let pattern of patterns) {
+    const match = message.match(pattern);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+// =============================
+// DETECTAR OBJEÇÃO DE PREÇO
+// =============================
+function isPriceObjection(message) {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("valor") ||
+    lower.includes("preço") ||
+    lower.includes("quanto custa") ||
+    lower.includes("custa quanto") ||
+    lower.includes("parcel") ||
+    lower.includes("condição")
+  );
+}
+
+// =============================
+// DETECTAR CONFIRMAÇÃO
+// =============================
+function isConfirmation(message) {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("confirmo") ||
+    lower.includes("pode marcar") ||
+    lower.includes("fechado") ||
+    lower.includes("ok pode") ||
+    lower.includes("pode agendar")
+  );
+}
+
+// =============================
+// ROTA WHATSAPP
+// =============================
 app.post("/whatsapp", async (req, res) => {
   try {
     const incomingMessage = req.body.Body;
     const from = req.body.From;
 
     if (!conversations[from]) {
-      conversations[from] = [];
+      conversations[from] = {
+        history: [],
+        name: null,
+        scheduledDate: null,
+      };
     }
 
-    conversations[from].push({
+    const userData = conversations[from];
+
+    // Salvar nome
+    const detectedName = extractName(incomingMessage);
+    if (detectedName) {
+      userData.name = detectedName;
+    }
+
+    userData.history.push({
       role: "user",
       content: incomingMessage,
     });
 
-    const nextAvailableDateObj = getNextBusinessDay();
-    const nextAvailableDate = formatDate(nextAvailableDateObj);
+    const nextDateObj = getNextBusinessDay();
+    const nextDate = formatDate(nextDateObj);
 
-    let strategicInstruction = `
-Data mínima para agendamento: ${nextAvailableDate}.
-Priorizar horário das 19h30.
-Nunca oferecer sábado ou domingo como padrão.
-`;
+    // Se for objeção de preço
+    if (isPriceObjection(incomingMessage)) {
+      const reply = `${userData.name ? userData.name + ", " : ""}entendo sua dúvida 😊
 
-    const lowerMessage = incomingMessage.toLowerCase();
+Como cada caso exige uma avaliação individual, os valores são definidos após analisarmos suas necessidades específicas.
 
-    if (
-      lowerMessage.includes("não posso") ||
-      lowerMessage.includes("nao posso") ||
-      lowerMessage.includes("outro horário") ||
-      lowerMessage.includes("outro horario")
-    ) {
-      strategicInstruction = `
-Paciente recusou horário.
+O Dr. Henrique Mafra trabalha com protocolos personalizados para garantir segurança e resultado natural.
 
-1ª alternativa: oferecer horário entre 14h e 18h no mesmo dia.
-Se ainda recusar:
-2ª alternativa: abrir exceção sábado às 10h.
-Se recusar sábado:
-3ª alternativa: oferecer outro dia útil entre 14h e 18h.
-`;
+Posso verificar uma data para avaliarmos seu caso com calma?
+
+Equipe Dr. Henrique Mafra`;
+
+      return res.type("text/xml").send(`
+        <Response>
+          <Message>${reply}</Message>
+        </Response>
+      `);
     }
 
+    // Se for confirmação de agendamento
+    if (isConfirmation(incomingMessage)) {
+      const finalDate = userData.scheduledDate || nextDate;
+
+      const reply = `Perfeito${userData.name ? ", " + userData.name : ""} 😊
+
+Seu horário ficou reservado para ${finalDate} às 19h30.
+
+Qualquer imprevisto, pedimos que nos avise com antecedência.
+
+Será um prazer te atender.
+
+Equipe Dr. Henrique Mafra`;
+
+      return res.type("text/xml").send(`
+        <Response>
+          <Message>${reply}</Message>
+        </Response>
+      `);
+    }
+
+    // GPT normal
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -90,80 +173,49 @@ Se recusar sábado:
           content: `
 Você é a assistente oficial do Dr. Henrique Mafra.
 
-ATENDIMENTO VIA WHATSAPP.
-Respostas curtas.
-Naturais.
-Conversacionais.
-Nunca parecer e-mail formal.
-Nunca usar "Atenciosamente".
+Tom humano, natural e elegante.
+Nunca robótico.
+Nunca formal demais.
+Nunca insistente.
 
-IDENTIDADE:
-Especialista em Biomedicina Estética.
-Autor do livro "Toxina Botulínica Descomplicada".
-Criador dos protocolos Beleza Renovada, Neuro Block, HiFu Master Lift e ReduXpress.
+Data mínima para agendamento:
+${nextDate}
 
-LOCAL:
-Clínica WF
-Rua 981, nº 196 – Centro
-Balneário Camboriú – SC
+Identifique perfil:
+Curioso → educar e conduzir.
+Decidido → ir direto para agenda.
+Indeciso → gerar segurança.
 
-PROCEDIMENTOS:
-Toxina Botulínica
-Preenchimento
-Bioestimulador de colágeno
-HIFU
-Fios de PDO
-Lipo de papada sem corte
-PEIM (vasinhos)
-Remoção de verrugas
-Blefaroplastia sem corte
-Redução de medidas
-Terapia ortomolecular
-Tratamento de melasma
-Tratamento de hiperidrose
-Rinomodelação
-Lobuloplastia
-Pescoço de boneca
-Harmonização das mãos
+Nunca falar valores.
+Sempre conduzir para avaliação.
+Sugerir 19h30 apenas se paciente demonstrar interesse.
 
-REGRAS:
-- Sempre responder a pergunta primeiro.
-- Depois conduzir para agendamento.
-- Nunca falar valores.
-- Dizer que valores são definidos após avaliação personalizada.
-- Criar leve escassez.
-- Priorizar 19h30.
-
-${strategicInstruction}
-
-Finalizar incentivando confirmação.
-Assinar apenas:
+Assinar:
 Equipe Dr. Henrique Mafra
-`,
+`
         },
-        ...conversations[from],
+        ...userData.history,
       ],
     });
 
     const reply = completion.choices[0].message.content;
 
-    conversations[from].push({
+    userData.history.push({
       role: "assistant",
       content: reply,
     });
 
-    res.set("Content-Type", "text/xml");
-    res.send(`
+    res.type("text/xml").send(`
       <Response>
         <Message>${reply}</Message>
       </Response>
     `);
   } catch (error) {
     console.error(error);
-    res.set("Content-Type", "text/xml");
-    res.send(`
+
+    res.type("text/xml").send(`
       <Response>
-        <Message>No momento estamos finalizando atendimentos. Pode nos enviar sua mensagem novamente?</Message>
+        <Message>No momento estamos finalizando atendimentos. Pode me enviar novamente sua mensagem? 😊</Message>
       </Response>
     `);
   }
