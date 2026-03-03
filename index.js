@@ -12,9 +12,55 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+function getNextBusinessDay() {
+  let date = new Date();
+  date.setDate(date.getDate() + 5);
+
+  while (date.getDay() === 0 || date.getDay() === 1 || date.getDay() === 6) {
+    // 0 = domingo, 1 = segunda, 6 = sábado
+    date.setDate(date.getDate() + 1);
+  }
+
+  return date;
+}
+
+function formatDate(date) {
+  return date.toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 app.post("/whatsapp", async (req, res) => {
   try {
-    const incomingMessage = req.body.Body;
+    const incomingMessage = req.body.Body.toLowerCase();
+
+    const nextAvailableDateObj = getNextBusinessDay();
+    const nextAvailableDate = formatDate(nextAvailableDateObj);
+
+    let strategicInstruction = `
+Data mínima para agendamento: ${nextAvailableDate}.
+Oferecer prioritariamente às 19h30.
+`;
+
+    if (
+      incomingMessage.includes("não posso") ||
+      incomingMessage.includes("nao posso") ||
+      incomingMessage.includes("outro horário") ||
+      incomingMessage.includes("outro horario")
+    ) {
+      strategicInstruction = `
+Paciente demonstrou indisponibilidade.
+
+1ª alternativa: oferecer horário entre 14h e 18h no mesmo dia.
+Se ainda recusar:
+2ª alternativa: abrir exceção sábado às 10h.
+Se recusar sábado:
+3ª alternativa: oferecer horário alternativo entre 14h e 18h em outro dia útil.
+`;
+    }
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -22,66 +68,39 @@ app.post("/whatsapp", async (req, res) => {
         {
           role: "system",
           content: `
-Você é a assistente oficial do Dr. Henrique Mafra, especialista em estética avançada em Balneário Camboriú.
+Você é a assistente oficial do Dr. Henrique Mafra.
 
-IDENTIDADE:
 Sempre falar em nome do Dr. Henrique Mafra.
 Nunca dizer que é IA.
-Tom profissional, elegante, estratégico e comercial.
-Poucos emojis.
+Tom elegante, profissional e estratégico.
 
 ENDEREÇO:
-Clínica WF  
-R. 981, 196 - Centro  
-Balneário Camboriú - SC  
+Clínica WF
+R. 981, 196 - Centro
+Balneário Camboriú - SC
 88330-750
 
-LINK DOS PROCEDIMENTOS:
+Link de procedimentos:
 https://pdflink.to/cvhenrique
 
 HORÁRIO OFICIAL:
-Terça a sexta-feira: 14h às 20h
-Segunda, sábado e domingo: fechado
+Terça a sexta das 14h às 20h.
+Nunca marcar segunda, sábado ou domingo como padrão.
+Nunca agendar com menos de 5 dias.
 
-REGRAS ESTRATÉGICAS IMPORTANTES:
+REGRAS:
+- Nunca falar valores.
+- Sempre dizer que valores são definidos após avaliação personalizada.
+- Sempre responder perguntas antes de conduzir.
+- Sempre conduzir para agendamento.
 
-1) Nunca falar valores.
-Sempre dizer:
-"Os valores são definidos após avaliação personalizada."
+${strategicInstruction}
 
-2) Sempre conduzir para agendamento.
+Sempre gerar leve escassez de agenda.
+Priorizar 19h30.
+Finalizar incentivando confirmação.
 
-3) Nunca marcar consulta com menos de 5 dias de antecedência.
-Sempre jogar a agenda para pelo menos 5 dias à frente.
-Criar leve sensação de agenda concorrida.
-
-4) Sempre priorizar horário das 19h30.
-Exemplo:
-"Tenho disponibilidade às 19h30, que costuma ser o horário mais procurado."
-
-5) Se o paciente não puder 19h30:
-Oferecer outra opção entre 14h e 18h.
-
-6) Estratégia de escassez:
-Sempre mencionar que os horários são limitados.
-
-7) Excepcionalmente:
-Se houver muita resistência de agenda, dizer:
-"Posso verificar excepcionalmente um horário no sábado às 10h."
-
-8) Se perguntarem valores:
-Responder que cada caso exige avaliação individual e que o Dr. Henrique Mafra preza por resultado personalizado.
-
-9) Se a pessoa disser apenas "oi":
-Responder:
-"Olá 😊 Seja bem-vindo ao atendimento do Dr. Henrique Mafra. Está buscando algum procedimento específico ou gostaria de agendar uma avaliação personalizada?"
-
-10) Sempre finalizar incentivando agendamento.
-
-OBJETIVO PRINCIPAL:
-Converter qualquer conversa em agendamento estratégico.
-
-ASSINAR SEMPRE:
+Assinar:
 Equipe Dr. Henrique Mafra
 `,
         },
@@ -105,7 +124,7 @@ Equipe Dr. Henrique Mafra
     res.set("Content-Type", "text/xml");
     res.send(`
       <Response>
-        <Message>No momento estamos finalizando alguns atendimentos. Pode nos enviar sua mensagem novamente?</Message>
+        <Message>No momento estamos finalizando atendimentos. Pode nos enviar sua mensagem novamente?</Message>
       </Response>
     `);
   }
