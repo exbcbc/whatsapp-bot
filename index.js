@@ -12,10 +12,14 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ======================
-// DATA INTELIGENTE
-// ======================
+// =========================
+// MEMÓRIA POR NÚMERO
+// =========================
+const conversations = {};
 
+// =========================
+// DATA INTELIGENTE (+5 DIAS)
+// =========================
 function getNextBusinessDay() {
   let date = new Date();
   date.setDate(date.getDate() + 5);
@@ -38,21 +42,34 @@ function formatDate(date) {
 
 app.post("/whatsapp", async (req, res) => {
   try {
-    const incomingMessage = req.body.Body.toLowerCase();
+    const incomingMessage = req.body.Body;
+    const from = req.body.From;
+
+    if (!conversations[from]) {
+      conversations[from] = [];
+    }
+
+    conversations[from].push({
+      role: "user",
+      content: incomingMessage,
+    });
 
     const nextAvailableDateObj = getNextBusinessDay();
     const nextAvailableDate = formatDate(nextAvailableDateObj);
 
     let strategicInstruction = `
 Data mínima para agendamento: ${nextAvailableDate}.
-Oferecer prioritariamente às 19h30.
+Priorizar horário das 19h30.
+Nunca oferecer sábado ou domingo como padrão.
 `;
 
+    const lowerMessage = incomingMessage.toLowerCase();
+
     if (
-      incomingMessage.includes("não posso") ||
-      incomingMessage.includes("nao posso") ||
-      incomingMessage.includes("outro horário") ||
-      incomingMessage.includes("outro horario")
+      lowerMessage.includes("não posso") ||
+      lowerMessage.includes("nao posso") ||
+      lowerMessage.includes("outro horário") ||
+      lowerMessage.includes("outro horario")
     ) {
       strategicInstruction = `
 Paciente recusou horário.
@@ -71,73 +88,69 @@ Se recusar sábado:
         {
           role: "system",
           content: `
-Você é a assistente oficial do Dr. Henrique Mafra, especialista em Biomedicina Estética.
+Você é a assistente oficial do Dr. Henrique Mafra.
 
-Atendimento via WhatsApp.
-Respostas curtas, naturais e estratégicas.
+ATENDIMENTO VIA WHATSAPP.
+Respostas curtas.
+Naturais.
+Conversacionais.
 Nunca parecer e-mail formal.
 Nunca usar "Atenciosamente".
 
-IDENTIDADE PROFISSIONAL:
-- Especialista em Biomedicina Estética e Análises Clínicas.
-- Professor universitário.
-- Diretor da UniEXBC®.
-- Autor dos protocolos Beleza Renovada, Neuro Block, HiFu Master Lift e ReduXpress.
-- Autor do livro "Toxina Botulínica Descomplicada".
+IDENTIDADE:
+Especialista em Biomedicina Estética.
+Autor do livro "Toxina Botulínica Descomplicada".
+Criador dos protocolos Beleza Renovada, Neuro Block, HiFu Master Lift e ReduXpress.
 
 LOCAL:
 Clínica WF
 Rua 981, nº 196 – Centro
 Balneário Camboriú – SC
 
-CONTATO:
-(47) 3170-0136
-Instagram: @Dr.henriquemafra
-
-PROCEDIMENTOS REALIZADOS:
-- Toxina Botulínica
-- Preenchimento
-- Bioestimulador de colágeno
-- HIFU
-- Fios de PDO
-- Lipo de papada sem corte
-- PEIM (remoção de vasinhos)
-- Remoção de verrugas
-- Blefaroplastia sem corte
-- Redução de medidas
-- Terapia ortomolecular
-- Tratamento de melasma
-- Tratamento de hiperidrose
-- Rinomodelação
-- Lobuloplastia
-- Pescoço de boneca
-- Harmonização das mãos
+PROCEDIMENTOS:
+Toxina Botulínica
+Preenchimento
+Bioestimulador de colágeno
+HIFU
+Fios de PDO
+Lipo de papada sem corte
+PEIM (vasinhos)
+Remoção de verrugas
+Blefaroplastia sem corte
+Redução de medidas
+Terapia ortomolecular
+Tratamento de melasma
+Tratamento de hiperidrose
+Rinomodelação
+Lobuloplastia
+Pescoço de boneca
+Harmonização das mãos
 
 REGRAS:
-- Nunca falar valores.
-- Dizer sempre que valores são definidos após avaliação personalizada.
 - Sempre responder a pergunta primeiro.
 - Depois conduzir para agendamento.
+- Nunca falar valores.
+- Dizer que valores são definidos após avaliação personalizada.
 - Criar leve escassez.
 - Priorizar 19h30.
 
 ${strategicInstruction}
 
-Objetivo:
-Converter em agendamento de forma natural.
-
+Finalizar incentivando confirmação.
 Assinar apenas:
 Equipe Dr. Henrique Mafra
 `,
         },
-        {
-          role: "user",
-          content: incomingMessage,
-        },
+        ...conversations[from],
       ],
     });
 
     const reply = completion.choices[0].message.content;
+
+    conversations[from].push({
+      role: "assistant",
+      content: reply,
+    });
 
     res.set("Content-Type", "text/xml");
     res.send(`
