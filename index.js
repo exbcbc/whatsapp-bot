@@ -17,21 +17,18 @@ const openai = new OpenAI({
 });
 
 const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
-
 const SHEET_API = "https://sheetdb.io/api/v1/wgkxf59rp8phz";
 
 const conversations = {};
 
-/* =========================
+const allowedTimes = ["14:00","15:00","16:00","17:00","18:00","19:30"];
+
+/* ======================
 DATA BRASIL
-========================= */
+====================== */
 
 function getBrazilDate(){
-
-  return new Date(
-    new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"})
-  );
-
+  return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
 function nextAvailableDate(){
@@ -41,32 +38,25 @@ function nextAvailableDate(){
   d.setDate(d.getDate()+5);
 
   while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
-
     d.setDate(d.getDate()+1);
-
   }
 
   return d;
-
 }
 
 function formatDate(date){
-
   return date.toLocaleDateString("pt-BR",{
-
     weekday:"long",
     day:"numeric",
     month:"long",
     year:"numeric",
     timeZone:"America/Sao_Paulo"
-
   });
-
 }
 
-/* =========================
-DETECTAR NOME
-========================= */
+/* ======================
+NOME
+====================== */
 
 function detectName(msg){
 
@@ -79,12 +69,11 @@ function detectName(msg){
   if(match) return match[1];
 
   return null;
-
 }
 
-/* =========================
+/* ======================
 PROCEDIMENTO
-========================= */
+====================== */
 
 function detectProcedure(msg){
 
@@ -99,7 +88,7 @@ function detectProcedure(msg){
   if(t.includes("papada"))
   return "lipo de papada";
 
-  if(t.includes("vaso") || t.includes("microvaso"))
+  if(t.includes("microvaso") || t.includes("vaso"))
   return "microvasos";
 
   if(t.includes("melasma") || t.includes("mancha"))
@@ -109,12 +98,11 @@ function detectProcedure(msg){
   return "bioestimulador";
 
   return null;
-
 }
 
-/* =========================
+/* ======================
 LEAD
-========================= */
+====================== */
 
 function classifyLead(msg){
 
@@ -133,60 +121,92 @@ function classifyLead(msg){
   ) return "frio";
 
   return "morno";
-
 }
 
-/* =========================
-SALVAR LEAD NA PLANILHA
-========================= */
+/* ======================
+DETECTAR AGENDAMENTO
+====================== */
+
+function detectSchedule(msg){
+
+  const t = msg.toLowerCase();
+
+  if(
+    t.includes("agendar") ||
+    t.includes("marcar") ||
+    t.includes("confirmo") ||
+    t.includes("pode marcar")
+  ){
+    return true;
+  }
+
+  return false;
+}
+
+/* ======================
+CRM SALVAR
+====================== */
 
 async function salvarLead(nome,telefone,procedimento,lead){
 
   try{
 
     await axios.post(SHEET_API,{
-
       data:[{
-
         data:new Date().toLocaleDateString("pt-BR"),
         nome:nome || "",
         telefone:telefone,
         procedimento:procedimento || "",
-        lead:lead || ""
-
+        lead:lead || "",
+        status:"lead",
+        horario:""
       }]
+    });
 
+  }catch(e){
+    console.log("Erro salvar lead",e.message);
+  }
+}
+
+/* ======================
+CRM ATUALIZAR
+====================== */
+
+async function atualizarStatus(telefone,status,horario){
+
+  try{
+
+    await axios.patch(`${SHEET_API}/telefone/${encodeURIComponent(telefone)}`,{
+      data:{
+        status:status,
+        horario:horario
+      }
     });
 
   }catch(e){
 
-    console.log("Erro salvar lead",e.message);
+    console.log("Erro atualizar status",e.message);
 
   }
-
 }
 
-/* =========================
+/* ======================
 ÁUDIO
-========================= */
+====================== */
 
 async function downloadAudio(url){
 
   const response = await axios({
-
     url,
     method:"GET",
     responseType:"stream",
-
     auth:{
       username:process.env.TWILIO_ACCOUNT_SID,
       password:process.env.TWILIO_AUTH_TOKEN
     }
-
   });
 
   const path="./audio/input.ogg";
-
   const writer=fs.createWriteStream(path);
 
   response.data.pipe(writer);
@@ -194,61 +214,49 @@ async function downloadAudio(url){
   return new Promise(resolve=>{
     writer.on("finish",()=>resolve(path));
   });
-
 }
 
 async function transcribeAudio(path){
 
   const transcription = await openai.audio.transcriptions.create({
-
     file: fs.createReadStream(path),
     model:"gpt-4o-transcribe"
-
   });
 
   return transcription.text;
-
 }
 
 async function generateVoice(text){
 
   const speech = await openai.audio.speech.create({
-
     model:"gpt-4o-mini-tts",
     voice:"nova",
     input:text
-
   });
 
   const buffer = Buffer.from(await speech.arrayBuffer());
 
   fs.writeFileSync("./audio/reply.mp3",buffer);
-
 }
 
-/* =========================
-FOLLOWUP
-========================= */
+/* ======================
+FOLLOW UP
+====================== */
 
 async function sendWhatsAppMessage(to,text){
 
   const url = `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
   await axios.post(url,new URLSearchParams({
-
     From:"whatsapp:+14155238886",
     To:to,
     Body:text
-
   }),{
-
     auth:{
       username:process.env.TWILIO_ACCOUNT_SID,
       password:process.env.TWILIO_AUTH_TOKEN
     }
-
   });
-
 }
 
 function scheduleFollowUps(user,phone){
@@ -262,18 +270,17 @@ function scheduleFollowUps(user,phone){
   },30*60*1000);
 
   setTimeout(()=>{
-    sendWhatsAppMessage(phone,"A agenda do Dr Henrique Mafra costuma ficar concorrida. Se desejar posso verificar horários.");
+    sendWhatsAppMessage(phone,"A agenda do Dr Henrique Mafra costuma ficar concorrida. Posso verificar horários para você.");
   },2*60*60*1000);
 
   setTimeout(()=>{
     sendWhatsAppMessage(phone,"Caso ainda tenha interesse no procedimento, posso ajudar com o agendamento.");
   },24*60*60*1000);
-
 }
 
-/* =========================
+/* ======================
 IA
-========================= */
+====================== */
 
 async function aiReply(history,nextDateText){
 
@@ -286,13 +293,11 @@ async function aiReply(history,nextDateText){
       {
         role:"system",
         content:`
-
 Você é a assistente da clínica do Dr Henrique Mafra.
 
 Fale como uma atendente profissional.
 
 Nunca utilize emojis.
-
 Nunca informe valores.
 
 Sempre conduza para avaliação presencial.
@@ -311,9 +316,7 @@ Data mínima para agendamento:
 ${nextDateText}
 
 Respostas curtas.
-
 `
-
       },
 
       ...history
@@ -323,12 +326,11 @@ Respostas curtas.
   });
 
   return completion.choices[0].message.content;
-
 }
 
-/* =========================
+/* ======================
 ROTA WHATSAPP
-========================= */
+====================== */
 
 app.post("/whatsapp", async(req,res)=>{
 
@@ -343,9 +345,7 @@ app.post("/whatsapp", async(req,res)=>{
     if(hasAudio){
 
       const mediaUrl=req.body.MediaUrl0;
-
       const path=await downloadAudio(mediaUrl);
-
       message=await transcribeAudio(path);
 
     }
@@ -353,13 +353,11 @@ app.post("/whatsapp", async(req,res)=>{
     if(!conversations[from]){
 
       conversations[from]={
-
         history:[],
         nome:null,
         procedimento:null,
         lead:null,
         iaAtiva:true
-
       };
 
     }
@@ -369,39 +367,18 @@ app.post("/whatsapp", async(req,res)=>{
     /* comandos */
 
     if(message === "#humano"){
-
       user.iaAtiva=false;
-
-      return res.type("text/xml").send(`
-<Response><Message>IA desativada.</Message></Response>
-`);
-
+      return res.type("text/xml").send(`<Response><Message>IA desativada.</Message></Response>`);
     }
 
     if(message === "#ia"){
-
       user.iaAtiva=true;
-
-      return res.type("text/xml").send(`
-<Response><Message>IA reativada.</Message></Response>
-`);
-
+      return res.type("text/xml").send(`<Response><Message>IA reativada.</Message></Response>`);
     }
 
     if(message === "#reset"){
-
-      conversations[from]={
-        history:[],
-        nome:null,
-        procedimento:null,
-        lead:null,
-        iaAtiva:true
-      };
-
-      return res.type("text/xml").send(`
-<Response><Message>Conversa reiniciada.</Message></Response>
-`);
-
+      conversations[from]={history:[],nome:null,procedimento:null,lead:null,iaAtiva:true};
+      return res.type("text/xml").send(`<Response><Message>Conversa reiniciada.</Message></Response>`);
     }
 
     if(!user.iaAtiva){
@@ -418,19 +395,17 @@ app.post("/whatsapp", async(req,res)=>{
 
     await salvarLead(user.nome,from,user.procedimento,user.lead);
 
-    user.history.push({
-      role:"user",
-      content:message
-    });
+    if(detectSchedule(message)){
+      await atualizarStatus(from,"agendado","19h30");
+    }
+
+    user.history.push({role:"user",content:message});
 
     const nextDateText=formatDate(nextAvailableDate());
 
     const reply=await aiReply(user.history,nextDateText);
 
-    user.history.push({
-      role:"assistant",
-      content:reply
-    });
+    user.history.push({role:"assistant",content:reply});
 
     scheduleFollowUps(user,from);
 
