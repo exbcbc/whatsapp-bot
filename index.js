@@ -1,3 +1,4 @@
+
 import express from "express";
 import OpenAI from "openai";
 import dotenv from "dotenv";
@@ -6,7 +7,6 @@ import fs from "fs";
 
 dotenv.config();
 
-/* garante pasta de áudio */
 if (!fs.existsSync("./audio")){
 fs.mkdirSync("./audio");
 }
@@ -21,16 +21,16 @@ const openai = new OpenAI({
 apiKey: process.env.OPENAI_API_KEY
 });
 
-const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
-const SHEET_API = "https://sheetdb.io/api/v1/wgkxf59rp8phz";
+const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
+const SHEET_API="https://sheetdb.io/api/v1/wgkxf59rp8phz";
 
-const CHATWOOT_API = process.env.CHATWOOT_API_URL;
-const CHATWOOT_TOKEN = process.env.CHATWOOT_TOKEN;
+const CHATWOOT_API=process.env.CHATWOOT_API_URL;
+const CHATWOOT_TOKEN=process.env.CHATWOOT_TOKEN;
 
-const conversations = {};
-const processedMessages = new Set();
+const conversations={};
+const processedMessages=new Set();
 
-/* DATA BRASIL */
+/* DATA */
 
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
@@ -46,9 +46,11 @@ d.setDate(d.getDate()+1);
 }
 
 return d;
+
 }
 
 function formatDate(date){
+
 return date.toLocaleDateString("pt-BR",{
 weekday:"long",
 day:"numeric",
@@ -56,19 +58,21 @@ month:"long",
 year:"numeric",
 timeZone:"America/Sao_Paulo"
 });
+
 }
 
-/* DETECÇÕES */
+/* DETECTAR */
 
 function detectName(msg){
 
-const match =
-msg.match(/meu nome é ([A-Za-zÀ-ú]+)/i) ||
-msg.match(/me chamo ([A-Za-zÀ-ú]+)/i) ||
-msg.match(/sou o ([A-Za-zÀ-ú]+)/i) ||
+const match=
+msg.match(/meu nome é ([A-Za-zÀ-ú]+)/i)||
+msg.match(/me chamo ([A-Za-zÀ-ú]+)/i)||
+msg.match(/sou o ([A-Za-zÀ-ú]+)/i)||
 msg.match(/sou a ([A-Za-zÀ-ú]+)/i);
 
 if(match) return match[1];
+
 return null;
 
 }
@@ -77,11 +81,11 @@ function detectProcedure(msg){
 
 const t=msg.toLowerCase();
 
-if(t.includes("botox") || t.includes("ruga")) return "botox";
-if(t.includes("preenchimento") || t.includes("lábio") || t.includes("labio")) return "preenchimento";
-if(t.includes("papada")) return "lipo de papada";
+if(t.includes("botox")) return "botox";
+if(t.includes("preenchimento")) return "preenchimento";
+if(t.includes("papada")) return "lipo papada";
 if(t.includes("vaso")) return "microvasos";
-if(t.includes("melasma") || t.includes("mancha")) return "tratamento manchas";
+if(t.includes("melasma")||t.includes("mancha")) return "manchas";
 if(t.includes("flacidez")) return "bioestimulador";
 
 return null;
@@ -92,8 +96,11 @@ function classifyLead(msg){
 
 const t=msg.toLowerCase();
 
-if(t.includes("agendar") || t.includes("marcar") || t.includes("horário")) return "quente";
-if(t.includes("valor") || t.includes("preço")) return "frio";
+if(t.includes("agendar")||t.includes("marcar")||t.includes("horário"))
+return "quente";
+
+if(t.includes("valor")||t.includes("preço"))
+return "frio";
 
 return "morno";
 
@@ -108,46 +115,75 @@ try{
 await axios.post(SHEET_API,{
 data:[{
 data:new Date().toLocaleDateString("pt-BR"),
-nome:nome || "",
+nome:nome||"",
 telefone:telefone,
-procedimento:procedimento || "",
-lead:lead || "",
+procedimento:procedimento||"",
+lead:lead||"",
 status:"lead"
 }]
 });
 
 }catch(e){
+
 console.log("erro salvar lead");
-}
 
 }
 
-/* ENVIAR PARA CHATWOOT */
+}
+
+/* CHATWOOT */
 
 async function enviarChatwoot(phone,message){
 
 try{
 
-await axios.post(
-`${CHATWOOT_API}/public/api/v1/inboxes/1/messages`,
+const contact=await axios.post(
+`${CHATWOOT_API}/api/v1/accounts/1/contacts`,
 {
-source_id: phone,
-content: message
+name:phone,
+phone_number:phone,
+identifier:phone
 },
 {
-headers:{
-api_access_token: CHATWOOT_TOKEN
+headers:{api_access_token:CHATWOOT_TOKEN}
 }
+);
+
+const contactId=contact.data.payload.contact.id;
+
+const conversation=await axios.post(
+`${CHATWOOT_API}/api/v1/accounts/1/conversations`,
+{
+inbox_id:1,
+contact_id:contactId
+},
+{
+headers:{api_access_token:CHATWOOT_TOKEN}
+}
+);
+
+const conversationId=conversation.data.id;
+
+await axios.post(
+`${CHATWOOT_API}/api/v1/accounts/1/conversations/${conversationId}/messages`,
+{
+content:message,
+message_type:"incoming"
+},
+{
+headers:{api_access_token:CHATWOOT_TOKEN}
 }
 );
 
 }catch(e){
+
 console.log("erro chatwoot");
-}
 
 }
 
-/* BAIXAR ÁUDIO */
+}
+
+/* BAIXAR AUDIO */
 
 async function downloadAudio(url){
 
@@ -162,6 +198,7 @@ password:process.env.TWILIO_AUTH_TOKEN
 });
 
 const path="./audio/input.ogg";
+
 const writer=fs.createWriteStream(path);
 
 response.data.pipe(writer);
@@ -196,11 +233,12 @@ input:text
 });
 
 const buffer=Buffer.from(await speech.arrayBuffer());
+
 fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
-/* RESPOSTA IA */
+/* IA */
 
 async function aiReply(history,nextDateText){
 
@@ -216,17 +254,12 @@ content:`
 
 Você é assistente da clínica Dr Henrique Mafra.
 
-Fale profissionalmente.
-
 Nunca use emojis.
 Nunca informe valores.
 
 Objetivo: levar paciente para avaliação presencial.
 
 Sempre sugerir primeiro horário às 19h30.
-
-Somente se paciente disser que não pode,
-ofereça horários entre 14h e 18h.
 
 Data mínima para agendamento:
 ${nextDateText}
@@ -248,31 +281,27 @@ return completion.choices[0].message.content;
 
 /* ROTA WHATSAPP */
 
-app.post("/whatsapp", async(req,res)=>{
+app.post("/whatsapp",async(req,res)=>{
 
 try{
 
 const messageSid=req.body.MessageSid;
 
-/* evita duplicação Twilio */
-
 if(processedMessages.has(messageSid)){
+
 return res.sendStatus(200);
+
 }
 
 processedMessages.add(messageSid);
 
-setTimeout(()=>{
-processedMessages.delete(messageSid);
-},60000);
+setTimeout(()=>processedMessages.delete(messageSid),60000);
 
 const from=req.body.From;
 
-const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
+const hasAudio=req.body.NumMedia&&req.body.NumMedia>0;
 
-let message=req.body.Body || "";
-
-/* áudio */
+let message=req.body.Body||"";
 
 if(hasAudio){
 
@@ -283,8 +312,6 @@ const path=await downloadAudio(mediaUrl);
 message=await transcribeAudio(path);
 
 }
-
-/* criar conversa */
 
 if(!conversations[from]){
 
@@ -302,30 +329,24 @@ const user=conversations[from];
 
 const msg=message.trim().toLowerCase();
 
-/* comandos */
-
 if(msg==="#humano"){
 user.iaAtiva=false;
-return res.type("text/xml").send(`<Response></Response>`);
+return res.sendStatus(200);
 }
 
 if(msg==="#ia"){
 user.iaAtiva=true;
-return res.type("text/xml").send(`<Response></Response>`);
+return res.sendStatus(200);
 }
 
 if(msg==="#reset"){
 conversations[from]={history:[],nome:null,procedimento:null,lead:null,iaAtiva:true};
-return res.type("text/xml").send(`<Response></Response>`);
+return res.sendStatus(200);
 }
-
-/* humano assumiu */
 
 if(!user.iaAtiva){
-return res.type("text/xml").send(`<Response></Response>`);
+return res.sendStatus(200);
 }
-
-/* análise */
 
 const name=detectName(message);
 if(name) user.nome=name;
@@ -335,15 +356,9 @@ if(procedure) user.procedimento=procedure;
 
 user.lead=classifyLead(message);
 
-/* salvar lead */
-
 await salvarLead(user.nome,from,user.procedimento,user.lead);
 
-/* enviar chatwoot */
-
 await enviarChatwoot(from,message);
-
-/* histórico */
 
 user.history.push({role:"user",content:message});
 
@@ -353,28 +368,18 @@ const reply=await aiReply(user.history,nextDateText);
 
 user.history.push({role:"assistant",content:reply});
 
-/* áudio resposta */
-
 if(hasAudio){
 
 await generateVoice(reply);
 
 return res.type("text/xml").send(
-`<Response>
-<Message>
-<Media>${DOMAIN}/audio/reply.mp3</Media>
-</Message>
-</Response>`
+`<Response><Message><Media>${DOMAIN}/audio/reply.mp3</Media></Message></Response>`
 );
 
 }
 
-/* resposta texto */
-
 res.type("text/xml").send(
-`<Response>
-<Message>${reply}</Message>
-</Response>`
+`<Response><Message>${reply}</Message></Response>`
 );
 
 }catch(err){
@@ -382,19 +387,17 @@ res.type("text/xml").send(
 console.log(err);
 
 res.type("text/xml").send(
-`<Response>
-<Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message>
-</Response>`
+`<Response><Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message></Response>`
 );
 
 }
 
 });
 
-/* servidor */
-
-const PORT=process.env.PORT || 8080;
+const PORT=process.env.PORT||8080;
 
 app.listen(PORT,()=>{
+
 console.log("Servidor rodando");
+
 });
