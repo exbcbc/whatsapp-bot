@@ -19,6 +19,9 @@ apiKey: process.env.OPENAI_API_KEY
 const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
 const SHEET_API = "https://sheetdb.io/api/v1/wgkxf59rp8phz";
 
+const CHATWOOT_API = process.env.CHATWOOT_API_URL;
+const CHATWOOT_TOKEN = process.env.CHATWOOT_TOKEN;
+
 const conversations = {};
 
 function getBrazilDate(){
@@ -95,14 +98,12 @@ const t=msg.toLowerCase();
 if(
 t.includes("agendar") ||
 t.includes("marcar") ||
-t.includes("horário") ||
-t.includes("disponibilidade")
+t.includes("horário")
 ) return "quente";
 
 if(
 t.includes("valor") ||
-t.includes("preço") ||
-t.includes("quanto custa")
+t.includes("preço")
 ) return "frio";
 
 return "morno";
@@ -127,6 +128,37 @@ status:"lead"
 }catch(e){
 
 console.log("Erro salvar lead");
+
+}
+
+}
+
+async function enviarChatwoot(phone,message){
+
+try{
+
+await axios.post(
+`${CHATWOOT_API}/api/v1/accounts/1/conversations`,
+{
+source_id: phone,
+inbox_id: 1,
+contact:{
+phone_number: phone
+},
+message:{
+content: message
+}
+},
+{
+headers:{
+api_access_token: CHATWOOT_TOKEN
+}
+}
+);
+
+}catch(e){
+
+console.log("Erro Chatwoot");
 
 }
 
@@ -198,32 +230,6 @@ password:process.env.TWILIO_AUTH_TOKEN
 
 }
 
-function scheduleFollowUps(user,phone){
-
-if(user.followupsScheduled) return;
-
-user.followupsScheduled=true;
-
-setTimeout(()=>{
-sendWhatsAppMessage(phone,
-"Vi que você estava vendo sobre o procedimento. Posso verificar um horário de avaliação para você."
-);
-},10*60*1000);
-
-setTimeout(()=>{
-sendWhatsAppMessage(phone,
-"A agenda do Dr Henrique Mafra costuma ficar concorrida. Posso verificar disponibilidade para você."
-);
-},2*60*60*1000);
-
-setTimeout(()=>{
-sendWhatsAppMessage(phone,
-"Alguns horários desta semana já foram preenchidos. Se quiser garantir sua avaliação posso verificar disponibilidade."
-);
-},24*60*60*1000);
-
-}
-
 async function aiReply(history,nextDateText){
 
 const completion=await openai.chat.completions.create({
@@ -236,9 +242,9 @@ messages:[
 role:"system",
 content:`
 
-Você é a assistente da clínica do Dr Henrique Mafra.
+Você é a assistente da clínica Dr Henrique Mafra.
 
-Fale de forma profissional e natural.
+Fale de forma profissional.
 
 Nunca utilize emojis.
 Nunca informe valores.
@@ -246,14 +252,6 @@ Nunca informe valores.
 Objetivo: levar o paciente para avaliação presencial.
 
 Sempre sugerir primeiro o horário das 19h30.
-
-Nunca listar todos os horários.
-
-Exemplo correto:
-"Posso verificar um horário às 19h30 para você."
-
-Somente se o paciente disser que não pode nesse horário
-ofereça horários entre 14h e 18h.
 
 Data mínima para agendamento:
 ${nextDateText}
@@ -313,8 +311,6 @@ if(msg==="#humano"){
 
 user.iaAtiva=false;
 
-console.log("IA desativada");
-
 return res.type("text/xml").send(`<Response></Response>`);
 
 }
@@ -322,8 +318,6 @@ return res.type("text/xml").send(`<Response></Response>`);
 if(msg==="#ia"){
 
 user.iaAtiva=true;
-
-console.log("IA reativada");
 
 return res.type("text/xml").send(`<Response></Response>`);
 
@@ -338,8 +332,6 @@ procedimento:null,
 lead:null,
 iaAtiva:true
 };
-
-console.log("Conversa resetada");
 
 return res.type("text/xml").send(`<Response></Response>`);
 
@@ -361,6 +353,8 @@ user.lead=classifyLead(message);
 
 await salvarLead(user.nome,from,user.procedimento,user.lead);
 
+await enviarChatwoot(from,message);
+
 user.history.push({role:"user",content:message});
 
 const nextDateText=formatDate(nextAvailableDate());
@@ -368,8 +362,6 @@ const nextDateText=formatDate(nextAvailableDate());
 const reply=await aiReply(user.history,nextDateText);
 
 user.history.push({role:"assistant",content:reply});
-
-scheduleFollowUps(user,from);
 
 if(hasAudio){
 
