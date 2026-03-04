@@ -241,7 +241,6 @@ Você é a assistente da clínica do Dr Henrique Mafra.
 Fale de forma profissional e natural.
 
 Nunca utilize emojis.
-
 Nunca informe valores.
 
 Objetivo: levar o paciente para avaliação presencial.
@@ -308,23 +307,48 @@ iaAtiva:true
 
 const user=conversations[from];
 
-if(message==="#humano"){
+const msg=message.trim().toLowerCase();
+
+if(msg==="#humano"){
+
 user.iaAtiva=false;
-return res.sendStatus(200);
+
+console.log("IA desativada");
+
+return res.type("text/xml").send(`<Response></Response>`);
+
 }
 
-if(message==="#ia"){
+if(msg==="#ia"){
+
 user.iaAtiva=true;
-return res.sendStatus(200);
+
+console.log("IA reativada");
+
+return res.type("text/xml").send(`<Response></Response>`);
+
 }
 
-if(message==="#reset"){
-conversations[from]={history:[],nome:null,procedimento:null,lead:null,iaAtiva:true};
-return res.sendStatus(200);
+if(msg==="#reset"){
+
+conversations[from]={
+history:[],
+nome:null,
+procedimento:null,
+lead:null,
+iaAtiva:true
+};
+
+console.log("Conversa resetada");
+
+return res.type("text/xml").send(`<Response></Response>`);
+
 }
 
 if(!user.iaAtiva){
-return res.sendStatus(200);
+
+return res.type("text/xml").send(`<Response></Response>`);
+
 }
 
 const name=detectName(message);
@@ -351,17 +375,17 @@ if(hasAudio){
 
 await generateVoice(reply);
 
-return res.type("text/xml").send(`<Response> <Message> <Media>${DOMAIN}/audio/reply.mp3</Media> </Message> </Response>`);
+return res.type("text/xml").send(`<Response><Message><Media>${DOMAIN}/audio/reply.mp3</Media></Message></Response>`);
 
 }
 
-res.type("text/xml").send(`<Response> <Message>${reply}</Message> </Response>`);
+res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
 }catch(err){
 
 console.log(err);
 
-res.type("text/xml").send(`<Response> <Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message> </Response>`);
+res.type("text/xml").send(`<Response><Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message></Response>`);
 
 }
 
@@ -372,3 +396,4 @@ const PORT=process.env.PORT || 8080;
 app.listen(PORT,()=>{
 console.log("Servidor rodando");
 });
+```
