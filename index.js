@@ -7,38 +7,52 @@ import fs from "fs";
 dotenv.config();
 
 const app = express();
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
 app.use("/audio", express.static("./audio"));
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-const conversations = {};
-
 const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
 
-const allowedTimes = ["14:00","15:00","16:00","17:00","18:00","19:30"];
+const conversations = {};
 
-/* =======================
+const allowedTimes = [
+"14:00","15:00","16:00","17:00","18:00","19:30"
+];
+
+/* ========================
 DATA BRASIL
-======================= */
+======================== */
 
 function getBrazilDate(){
-  return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
+
+  return new Date(
+    new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"})
+  );
+
 }
 
-function nextDate(){
+function nextAvailableDate(){
 
   let d = getBrazilDate();
+
   d.setDate(d.getDate()+5);
 
-  while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
+  while(
+    d.getDay()===0 ||
+    d.getDay()===1 ||
+    d.getDay()===6
+  ){
     d.setDate(d.getDate()+1);
   }
 
   return d;
+
 }
 
 function formatDate(date){
@@ -53,36 +67,36 @@ function formatDate(date){
 
 }
 
-/* =======================
-DETECTAR PROCEDIMENTO
-======================= */
+/* ========================
+PROCEDIMENTO
+======================== */
 
 function detectProcedure(msg){
 
   const t = msg.toLowerCase();
 
   if(t.includes("botox") || t.includes("ruga") || t.includes("testa"))
-    return "Botox";
+  return "botox";
 
-  if(t.includes("lábio") || t.includes("labio") || t.includes("bigode chinês"))
-    return "Preenchimento";
+  if(t.includes("lábio") || t.includes("labio") || t.includes("preenchimento"))
+  return "preenchimento";
 
   if(t.includes("papada"))
-    return "Lipo de Papada";
+  return "papada";
 
   if(t.includes("vaso") || t.includes("microvaso"))
-    return "Microvasos";
+  return "microvasos";
 
   if(t.includes("mancha") || t.includes("melasma"))
-    return "Tratamento de Manchas";
+  return "manchas";
 
   return null;
 
 }
 
-/* =======================
-CLASSIFICAR LEAD
-======================= */
+/* ========================
+LEAD
+======================== */
 
 function classifyLead(msg){
 
@@ -93,25 +107,27 @@ function classifyLead(msg){
     t.includes("quero agendar") ||
     t.includes("tem horário") ||
     t.includes("marcar consulta")
-  ) return "quente";
+  )
+  return "quente";
 
   if(
     t.includes("quanto custa") ||
     t.includes("valor") ||
     t.includes("preço")
-  ) return "frio";
+  )
+  return "frio";
 
   return "morno";
 
 }
 
-/* =======================
-ÁUDIO
-======================= */
+/* ========================
+DOWNLOAD AUDIO
+======================== */
 
 async function downloadAudio(url){
 
-  const res = await axios({
+  const response = await axios({
     url,
     method:"GET",
     responseType:"stream",
@@ -122,9 +138,10 @@ async function downloadAudio(url){
   });
 
   const path="./audio/input.ogg";
-  const writer=fs.createWriteStream(path);
 
-  res.data.pipe(writer);
+  const writer = fs.createWriteStream(path);
+
+  response.data.pipe(writer);
 
   return new Promise(resolve=>{
     writer.on("finish",()=>resolve(path));
@@ -132,16 +149,24 @@ async function downloadAudio(url){
 
 }
 
+/* ========================
+TRANSCRIÇÃO
+======================== */
+
 async function transcribeAudio(path){
 
-  const tr = await openai.audio.transcriptions.create({
+  const transcription = await openai.audio.transcriptions.create({
     file: fs.createReadStream(path),
-    model: "gpt-4o-transcribe"
+    model:"gpt-4o-transcribe"
   });
 
-  return tr.text;
+  return transcription.text;
 
 }
+
+/* ========================
+GERAR VOZ
+======================== */
 
 async function generateVoice(text){
 
@@ -157,9 +182,9 @@ async function generateVoice(text){
 
 }
 
-/* =======================
-RESPOSTA IA
-======================= */
+/* ========================
+IA
+======================== */
 
 async function aiReply(history,nextDateText){
 
@@ -168,24 +193,29 @@ async function aiReply(history,nextDateText){
     model:"gpt-4o-mini",
 
     messages:[
+
       {
         role:"system",
         content:`
-Você é a assistente da clínica Dr Henrique Mafra.
+Você é a assistente da clínica do Dr Henrique Mafra.
 
-Sempre responder de forma natural como WhatsApp.
+Converse como uma atendente real de WhatsApp.
 
-Nunca falar valores.
+Nunca assinar mensagens.
 
-Sempre conduzir para avaliação.
+Nunca parecer robô.
 
-Agenda mínima:
+Nunca falar valores de procedimentos.
+
+Sempre conduzir para avaliação presencial.
+
+Data mínima para agendamento:
 ${nextDateText}
 
-Sugestão principal:
+Horário preferencial:
 19h30
 
-Horários disponíveis:
+Horários possíveis:
 14h
 15h
 16h
@@ -193,9 +223,11 @@ Horários disponíveis:
 18h
 19h30
 
-Sempre sugerir primeiro 19h30.
+Sempre sugerir primeiro 19h30 de forma natural.
 
-Responder curto e humano.
+Respostas curtas.
+
+Tom simpático e humano.
 `
       },
 
@@ -209,26 +241,27 @@ Responder curto e humano.
 
 }
 
-/* =======================
+/* ========================
 ROTA WHATSAPP
-======================= */
+======================== */
 
 app.post("/whatsapp", async(req,res)=>{
 
   try{
 
-    const from=req.body.From;
+    const from = req.body.From;
 
-    const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
+    const hasAudio = req.body.NumMedia && req.body.NumMedia>0;
 
-    let message=req.body.Body || "";
+    let message = req.body.Body || "";
 
     if(hasAudio){
 
       const mediaUrl=req.body.MediaUrl0;
+
       const path=await downloadAudio(mediaUrl);
 
-      message=await transcribeAudio(path);
+      message = await transcribeAudio(path);
 
     }
 
@@ -242,23 +275,24 @@ app.post("/whatsapp", async(req,res)=>{
 
     }
 
-    const user=conversations[from];
+    const user = conversations[from];
 
     user.history.push({
       role:"user",
       content:message
     });
 
-    const procedure=detectProcedure(message);
-    if(procedure) user.procedure=procedure;
+    const procedure = detectProcedure(message);
+    if(procedure) user.procedure = procedure;
 
-    const lead=classifyLead(message);
-    user.lead=lead;
+    const lead = classifyLead(message);
+    user.lead = lead;
 
-    const next=nextDate();
-    const nextDateText=formatDate(next);
+    const nextDate = nextAvailableDate();
 
-    const reply=await aiReply(user.history,nextDateText);
+    const nextDateText = formatDate(nextDate);
+
+    const reply = await aiReply(user.history,nextDateText);
 
     user.history.push({
       role:"assistant",
@@ -286,7 +320,9 @@ app.post("/whatsapp", async(req,res)=>{
 </Response>
 `);
 
-  }catch(err){
+  }
+
+  catch(err){
 
     console.log(err);
 
@@ -303,7 +339,7 @@ Pode me enviar novamente sua mensagem?
 
 });
 
-const PORT=process.env.PORT || 8080;
+const PORT = process.env.PORT || 8080;
 
 app.listen(PORT,()=>{
   console.log("Servidor rodando");
