@@ -21,8 +21,6 @@ const SHEET_API = "https://sheetdb.io/api/v1/wgkxf59rp8phz";
 
 const conversations = {};
 
-const allowedTimes = ["14:00","15:00","16:00","17:00","18:00","19:30"];
-
 /* ======================
 DATA BRASIL
 ====================== */
@@ -88,7 +86,7 @@ function detectProcedure(msg){
   if(t.includes("papada"))
   return "lipo de papada";
 
-  if(t.includes("microvaso") || t.includes("vaso"))
+  if(t.includes("vaso") || t.includes("microvaso"))
   return "microvasos";
 
   if(t.includes("melasma") || t.includes("mancha"))
@@ -124,27 +122,7 @@ function classifyLead(msg){
 }
 
 /* ======================
-DETECTAR AGENDAMENTO
-====================== */
-
-function detectSchedule(msg){
-
-  const t = msg.toLowerCase();
-
-  if(
-    t.includes("agendar") ||
-    t.includes("marcar") ||
-    t.includes("confirmo") ||
-    t.includes("pode marcar")
-  ){
-    return true;
-  }
-
-  return false;
-}
-
-/* ======================
-CRM SALVAR
+SALVAR LEAD
 ====================== */
 
 async function salvarLead(nome,telefone,procedimento,lead){
@@ -169,28 +147,6 @@ async function salvarLead(nome,telefone,procedimento,lead){
 }
 
 /* ======================
-CRM ATUALIZAR
-====================== */
-
-async function atualizarStatus(telefone,status,horario){
-
-  try{
-
-    await axios.patch(`${SHEET_API}/telefone/${encodeURIComponent(telefone)}`,{
-      data:{
-        status:status,
-        horario:horario
-      }
-    });
-
-  }catch(e){
-
-    console.log("Erro atualizar status",e.message);
-
-  }
-}
-
-/* ======================
 ÁUDIO
 ====================== */
 
@@ -207,6 +163,7 @@ async function downloadAudio(url){
   });
 
   const path="./audio/input.ogg";
+
   const writer=fs.createWriteStream(path);
 
   response.data.pipe(writer);
@@ -240,45 +197,6 @@ async function generateVoice(text){
 }
 
 /* ======================
-FOLLOW UP
-====================== */
-
-async function sendWhatsAppMessage(to,text){
-
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
-
-  await axios.post(url,new URLSearchParams({
-    From:"whatsapp:+14155238886",
-    To:to,
-    Body:text
-  }),{
-    auth:{
-      username:process.env.TWILIO_ACCOUNT_SID,
-      password:process.env.TWILIO_AUTH_TOKEN
-    }
-  });
-}
-
-function scheduleFollowUps(user,phone){
-
-  if(user.followupsScheduled) return;
-
-  user.followupsScheduled=true;
-
-  setTimeout(()=>{
-    sendWhatsAppMessage(phone,"Vi que você estava vendo sobre o procedimento. Posso verificar disponibilidade para avaliação.");
-  },30*60*1000);
-
-  setTimeout(()=>{
-    sendWhatsAppMessage(phone,"A agenda do Dr Henrique Mafra costuma ficar concorrida. Posso verificar horários para você.");
-  },2*60*60*1000);
-
-  setTimeout(()=>{
-    sendWhatsAppMessage(phone,"Caso ainda tenha interesse no procedimento, posso ajudar com o agendamento.");
-  },24*60*60*1000);
-}
-
-/* ======================
 IA
 ====================== */
 
@@ -293,6 +211,7 @@ async function aiReply(history,nextDateText){
       {
         role:"system",
         content:`
+
 Você é a assistente da clínica do Dr Henrique Mafra.
 
 Fale como uma atendente profissional.
@@ -300,23 +219,30 @@ Fale como uma atendente profissional.
 Nunca utilize emojis.
 Nunca informe valores.
 
-Sempre conduza para avaliação presencial.
+OBJETIVO PRINCIPAL:
+Levar o paciente para avaliação presencial.
 
-Horário preferencial: 19h30.
+REGRAS DE AGENDAMENTO:
 
-Horários disponíveis:
-14h
-15h
-16h
-17h
-18h
-19h30
+Sempre sugerir primeiro o horário das 19h30.
+
+Nunca listar todos os horários disponíveis.
+
+Exemplo correto:
+"Posso verificar um horário às 19h30 para você."
+
+Somente se o paciente disser que não pode às 19h30,
+então ofereça horários entre 14h e 18h.
+
+Nunca comece oferecendo vários horários.
 
 Data mínima para agendamento:
 ${nextDateText}
 
-Respostas curtas.
+Respostas curtas e naturais.
+
 `
+
       },
 
       ...history
@@ -345,7 +271,9 @@ app.post("/whatsapp", async(req,res)=>{
     if(hasAudio){
 
       const mediaUrl=req.body.MediaUrl0;
+
       const path=await downloadAudio(mediaUrl);
+
       message=await transcribeAudio(path);
 
     }
@@ -356,34 +284,12 @@ app.post("/whatsapp", async(req,res)=>{
         history:[],
         nome:null,
         procedimento:null,
-        lead:null,
-        iaAtiva:true
+        lead:null
       };
 
     }
 
     const user=conversations[from];
-
-    /* comandos */
-
-    if(message === "#humano"){
-      user.iaAtiva=false;
-      return res.type("text/xml").send(`<Response><Message>IA desativada.</Message></Response>`);
-    }
-
-    if(message === "#ia"){
-      user.iaAtiva=true;
-      return res.type("text/xml").send(`<Response><Message>IA reativada.</Message></Response>`);
-    }
-
-    if(message === "#reset"){
-      conversations[from]={history:[],nome:null,procedimento:null,lead:null,iaAtiva:true};
-      return res.type("text/xml").send(`<Response><Message>Conversa reiniciada.</Message></Response>`);
-    }
-
-    if(!user.iaAtiva){
-      return res.sendStatus(200);
-    }
 
     const name=detectName(message);
     if(name) user.nome=name;
@@ -395,19 +301,19 @@ app.post("/whatsapp", async(req,res)=>{
 
     await salvarLead(user.nome,from,user.procedimento,user.lead);
 
-    if(detectSchedule(message)){
-      await atualizarStatus(from,"agendado","19h30");
-    }
-
-    user.history.push({role:"user",content:message});
+    user.history.push({
+      role:"user",
+      content:message
+    });
 
     const nextDateText=formatDate(nextAvailableDate());
 
     const reply=await aiReply(user.history,nextDateText);
 
-    user.history.push({role:"assistant",content:reply});
-
-    scheduleFollowUps(user,from);
+    user.history.push({
+      role:"assistant",
+      content:reply
+    });
 
     if(hasAudio){
 
