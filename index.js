@@ -12,22 +12,51 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// =============================
-// MEMÓRIA
-// =============================
+/* =========================
+MEMÓRIA
+========================= */
+
 const conversations = {};
 
-// =============================
-// DATA INTELIGENTE
-// =============================
+/* =========================
+HORÁRIOS PERMITIDOS
+========================= */
+
+const allowedTimes = [
+  "14:00",
+  "15:00",
+  "16:00",
+  "17:00",
+  "18:00",
+  "19:30"
+];
+
+/* =========================
+DATA BRASIL
+========================= */
+
+function getBrazilDate() {
+  return new Date(
+    new Date().toLocaleString("en-US", {
+      timeZone: "America/Sao_Paulo"
+    })
+  );
+}
+
+/* =========================
+PRÓXIMO DIA DISPONÍVEL
+========================= */
+
 function getNextBusinessDay() {
-  let date = new Date();
+
+  let date = getBrazilDate();
+
   date.setDate(date.getDate() + 5);
 
   while (
-    date.getDay() === 0 ||
-    date.getDay() === 1 ||
-    date.getDay() === 6
+    date.getDay() === 0 || // domingo
+    date.getDay() === 1 || // segunda
+    date.getDay() === 6    // sábado
   ) {
     date.setDate(date.getDate() + 1);
   }
@@ -35,193 +64,302 @@ function getNextBusinessDay() {
   return date;
 }
 
+/* =========================
+FORMATAR DATA
+========================= */
+
 function formatDate(date) {
+
   return date.toLocaleDateString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
     weekday: "long",
     day: "2-digit",
     month: "long",
-    year: "numeric",
+    year: "numeric"
   });
 }
 
-// =============================
-// EXTRAIR NOME
-// =============================
+/* =========================
+DETECTAR HORÁRIO
+========================= */
+
+function extractTime(text) {
+
+  const match = text.match(/\b([01]?\d|2[0-3])[:h]?([0-5]\d)?/);
+
+  if (!match) return null;
+
+  let hour = match[1].padStart(2, "0");
+  let minute = match[2] ? match[2] : "00";
+
+  return `${hour}:${minute}`;
+}
+
+/* =========================
+EXTRAIR NOME
+========================= */
+
 function extractName(message) {
+
   const patterns = [
     /me chamo\s+([a-zA-ZÀ-ú]+)/i,
     /meu nome é\s+([a-zA-ZÀ-ú]+)/i,
     /sou a\s+([a-zA-ZÀ-ú]+)/i,
-    /sou o\s+([a-zA-ZÀ-ú]+)/i,
+    /sou o\s+([a-zA-ZÀ-ú]+)/i
   ];
 
-  for (let pattern of patterns) {
-    const match = message.match(pattern);
+  for (let p of patterns) {
+
+    const match = message.match(p);
+
     if (match) return match[1];
+
   }
 
   return null;
 }
 
-// =============================
-// DETECTAR OBJEÇÃO DE PREÇO
-// =============================
-function isPriceObjection(message) {
-  const lower = message.toLowerCase();
+/* =========================
+OBJEÇÃO DE PREÇO
+========================= */
+
+function isPriceObjection(text) {
+
+  const t = text.toLowerCase();
+
   return (
-    lower.includes("valor") ||
-    lower.includes("preço") ||
-    lower.includes("quanto custa") ||
-    lower.includes("custa quanto") ||
-    lower.includes("parcel") ||
-    lower.includes("condição")
+    t.includes("valor") ||
+    t.includes("preço") ||
+    t.includes("quanto custa") ||
+    t.includes("custa quanto") ||
+    t.includes("parcel")
   );
 }
 
-// =============================
-// DETECTAR CONFIRMAÇÃO
-// =============================
-function isConfirmation(message) {
-  const lower = message.toLowerCase();
+/* =========================
+CONFIRMAÇÃO
+========================= */
+
+function isConfirmation(text) {
+
+  const t = text.toLowerCase();
+
   return (
-    lower.includes("confirmo") ||
-    lower.includes("pode marcar") ||
-    lower.includes("fechado") ||
-    lower.includes("ok pode") ||
-    lower.includes("pode agendar")
+    t.includes("confirmo") ||
+    t.includes("pode marcar") ||
+    t.includes("ok pode") ||
+    t.includes("fechado")
   );
 }
 
-// =============================
-// ROTA WHATSAPP
-// =============================
+/* =========================
+ROTA WHATSAPP
+========================= */
+
 app.post("/whatsapp", async (req, res) => {
+
   try {
-    const incomingMessage = req.body.Body;
+
+    const message = req.body.Body;
     const from = req.body.From;
 
     if (!conversations[from]) {
+
       conversations[from] = {
         history: [],
         name: null,
-        scheduledDate: null,
+        date: null
       };
+
     }
 
-    const userData = conversations[from];
+    const user = conversations[from];
 
-    // Salvar nome
-    const detectedName = extractName(incomingMessage);
-    if (detectedName) {
-      userData.name = detectedName;
-    }
+    /* salvar nome */
 
-    userData.history.push({
+    const name = extractName(message);
+
+    if (name) user.name = name;
+
+    user.history.push({
       role: "user",
-      content: incomingMessage,
+      content: message
     });
 
-    const nextDateObj = getNextBusinessDay();
-    const nextDate = formatDate(nextDateObj);
+    const nextDate = getNextBusinessDay();
+    const nextDateText = formatDate(nextDate);
 
-    // Se for objeção de preço
-    if (isPriceObjection(incomingMessage)) {
-      const reply = `${userData.name ? userData.name + ", " : ""}entendo sua dúvida 😊
+    /* objeção preço */
 
-Como cada caso exige uma avaliação individual, os valores são definidos após analisarmos suas necessidades específicas.
+    if (isPriceObjection(message)) {
 
-O Dr. Henrique Mafra trabalha com protocolos personalizados para garantir segurança e resultado natural.
+      const reply = `${user.name ? user.name + ", " : ""}entendo sua dúvida 😊
 
-Posso verificar uma data para avaliarmos seu caso com calma?
+Como cada caso exige uma avaliação individual, os valores são definidos somente após analisarmos suas necessidades.
 
-Equipe Dr. Henrique Mafra`;
+O Dr. Henrique Mafra trabalha com protocolos personalizados para garantir naturalidade e segurança.
 
-      return res.type("text/xml").send(`
-        <Response>
-          <Message>${reply}</Message>
-        </Response>
-      `);
-    }
-
-    // Se for confirmação de agendamento
-    if (isConfirmation(incomingMessage)) {
-      const finalDate = userData.scheduledDate || nextDate;
-
-      const reply = `Perfeito${userData.name ? ", " + userData.name : ""} 😊
-
-Seu horário ficou reservado para ${finalDate} às 19h30.
-
-Qualquer imprevisto, pedimos que nos avise com antecedência.
-
-Será um prazer te atender.
+Se quiser, posso verificar uma data para avaliarmos seu caso com calma.
 
 Equipe Dr. Henrique Mafra`;
 
       return res.type("text/xml").send(`
-        <Response>
-          <Message>${reply}</Message>
-        </Response>
-      `);
+<Response>
+<Message>${reply}</Message>
+</Response>
+`);
     }
 
-    // GPT normal
+    /* detectar horário */
+
+    const detectedTime = extractTime(message);
+
+    if (detectedTime) {
+
+      if (!allowedTimes.includes(detectedTime)) {
+
+        const reply = `Nesse horário não temos atendimento.
+
+Os horários disponíveis são:
+
+14h  
+15h  
+16h  
+17h  
+18h  
+19h30
+
+Qual deles funciona melhor para você?`;
+
+        return res.type("text/xml").send(`
+<Response>
+<Message>${reply}</Message>
+</Response>
+`);
+      }
+
+      user.date = nextDateText;
+
+      const reply = `Perfeito${user.name ? ", " + user.name : ""} 😊
+
+Seu horário ficou reservado para ${nextDateText} às ${detectedTime}.
+
+Qualquer imprevisto, nos avise com antecedência.
+
+Equipe Dr. Henrique Mafra`;
+
+      return res.type("text/xml").send(`
+<Response>
+<Message>${reply}</Message>
+</Response>
+`);
+    }
+
+    /* confirmação */
+
+    if (isConfirmation(message)) {
+
+      const reply = `Perfeito${user.name ? ", " + user.name : ""} 😊
+
+Seu horário ficou reservado para ${nextDateText} às 19h30.
+
+Equipe Dr. Henrique Mafra`;
+
+      return res.type("text/xml").send(`
+<Response>
+<Message>${reply}</Message>
+</Response>
+`);
+    }
+
+    /* IA NORMAL */
+
     const completion = await openai.chat.completions.create({
+
       model: "gpt-4o-mini",
+
       messages: [
+
         {
           role: "system",
           content: `
-Você é a assistente oficial do Dr. Henrique Mafra.
+Você é a assistente da clínica do Dr. Henrique Mafra.
 
-Tom humano, natural e elegante.
-Nunca robótico.
-Nunca formal demais.
-Nunca insistente.
+Clínica WF
+Rua 981 nº196
+Centro
+Balneário Camboriú
 
-Data mínima para agendamento:
-${nextDate}
-
-Identifique perfil:
-Curioso → educar e conduzir.
-Decidido → ir direto para agenda.
-Indeciso → gerar segurança.
+Atendimento via WhatsApp.
 
 Nunca falar valores.
-Sempre conduzir para avaliação.
-Sugerir 19h30 apenas se paciente demonstrar interesse.
 
-Assinar:
+Data mínima para agendamento:
+${nextDateText}
+
+Horários disponíveis:
+
+14h
+15h
+16h
+17h
+18h
+19h30
+
+Funcionamento:
+
+Terça a Sexta
+14h às 20h
+
+Sábado apenas exceção 10h.
+
+Nunca inventar datas.
+Nunca inventar horários.
+
+Respostas naturais.
+Curto.
+WhatsApp real.
+
+Finalizar:
+
 Equipe Dr. Henrique Mafra
 `
         },
-        ...userData.history,
-      ],
+
+        ...user.history
+
+      ]
+
     });
 
     const reply = completion.choices[0].message.content;
 
-    userData.history.push({
+    user.history.push({
       role: "assistant",
-      content: reply,
+      content: reply
     });
 
     res.type("text/xml").send(`
-      <Response>
-        <Message>${reply}</Message>
-      </Response>
-    `);
+<Response>
+<Message>${reply}</Message>
+</Response>
+`);
+
   } catch (error) {
-    console.error(error);
+
+    console.log(error);
 
     res.type("text/xml").send(`
-      <Response>
-        <Message>No momento estamos finalizando atendimentos. Pode me enviar novamente sua mensagem? 😊</Message>
-      </Response>
-    `);
+<Response>
+<Message>No momento estamos finalizando atendimentos. Pode me enviar novamente sua mensagem? 😊</Message>
+</Response>
+`);
   }
+
 });
 
 const PORT = process.env.PORT || 8080;
+
 app.listen(PORT, () => {
-  console.log("Servidor rodando na porta " + PORT);
+  console.log("Servidor rodando");
 });
