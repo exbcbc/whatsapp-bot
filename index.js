@@ -7,15 +7,18 @@ import fs from "fs";
 dotenv.config();
 
 const app = express();
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+app.use("/audio", express.static("./audio"));
+
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY
 });
 
 /* =========================
-MEMÓRIA
+MEMÓRIA DE CONVERSA
 ========================= */
 
 const conversations = {};
@@ -56,9 +59,9 @@ function getNextBusinessDay() {
   date.setDate(date.getDate() + 5);
 
   while (
-    date.getDay() === 0 || // domingo
-    date.getDay() === 1 || // segunda
-    date.getDay() === 6    // sábado
+    date.getDay() === 0 ||
+    date.getDay() === 1 ||
+    date.getDay() === 6
   ) {
     date.setDate(date.getDate() + 1);
   }
@@ -79,10 +82,11 @@ function formatDate(date) {
     month: "long",
     year: "numeric"
   });
+
 }
 
 /* =========================
-DETECTAR HORÁRIO
+EXTRAIR HORÁRIO
 ========================= */
 
 function extractTime(text) {
@@ -95,6 +99,7 @@ function extractTime(text) {
   let minute = match[2] ? match[2] : "00";
 
   return `${hour}:${minute}`;
+
 }
 
 /* =========================
@@ -119,10 +124,11 @@ function extractName(message) {
   }
 
   return null;
+
 }
 
 /* =========================
-OBJEÇÃO DE PREÇO
+DETECTAR PREÇO
 ========================= */
 
 function isPriceObjection(text) {
@@ -136,22 +142,72 @@ function isPriceObjection(text) {
     t.includes("custa quanto") ||
     t.includes("parcel")
   );
+
 }
 
 /* =========================
-CONFIRMAÇÃO
+BAIXAR ÁUDIO
 ========================= */
 
-function isConfirmation(text) {
+async function downloadAudio(url) {
 
-  const t = text.toLowerCase();
+  const response = await axios({
+    url,
+    method: "GET",
+    responseType: "stream",
+    auth: {
+      username: process.env.TWILIO_ACCOUNT_SID,
+      password: process.env.TWILIO_AUTH_TOKEN
+    }
+  });
 
-  return (
-    t.includes("confirmo") ||
-    t.includes("pode marcar") ||
-    t.includes("ok pode") ||
-    t.includes("fechado")
-  );
+  const path = "./audio/audio.ogg";
+
+  const writer = fs.createWriteStream(path);
+
+  response.data.pipe(writer);
+
+  return new Promise((resolve) => {
+    writer.on("finish", () => resolve(path));
+  });
+
+}
+
+/* =========================
+TRANSCRIÇÃO
+========================= */
+
+async function transcribeAudio(path) {
+
+  const transcription = await openai.audio.transcriptions.create({
+    file: fs.createReadStream(path),
+    model: "gpt-4o-transcribe"
+  });
+
+  return transcription.text;
+
+}
+
+/* =========================
+GERAR VOZ
+========================= */
+
+async function generateVoice(text) {
+
+  const speech = await openai.audio.speech.create({
+    model: "gpt-4o-mini-tts",
+    voice: "alloy",
+    input: text
+  });
+
+  const buffer = Buffer.from(await speech.arrayBuffer());
+
+  const file = "./audio/reply.mp3";
+
+  fs.writeFileSync(file, buffer);
+
+  return file;
+
 }
 
 /* =========================
@@ -162,38 +218,47 @@ app.post("/whatsapp", async (req, res) => {
 
   try {
 
-    const message = req.body.Body;
     const from = req.body.From;
+
+    const hasAudio = req.body.NumMedia && req.body.NumMedia > 0;
+
+    let incomingMessage = req.body.Body || "";
+
+    if (hasAudio) {
+
+      const mediaUrl = req.body.MediaUrl0;
+
+      const audioPath = await downloadAudio(mediaUrl);
+
+      incomingMessage = await transcribeAudio(audioPath);
+
+    }
 
     if (!conversations[from]) {
 
       conversations[from] = {
         history: [],
-        name: null,
-        date: null
+        name: null
       };
 
     }
 
     const user = conversations[from];
 
-    /* salvar nome */
+    const detectedName = extractName(incomingMessage);
 
-    const name = extractName(message);
-
-    if (name) user.name = name;
+    if (detectedName) user.name = detectedName;
 
     user.history.push({
       role: "user",
-      content: message
+      content: incomingMessage
     });
 
     const nextDate = getNextBusinessDay();
+
     const nextDateText = formatDate(nextDate);
 
-    /* objeção preço */
-
-    if (isPriceObjection(message)) {
+    if (isPriceObjection(incomingMessage)) {
 
       const reply = `${user.name ? user.name + ", " : ""}entendo sua dúvida 😊
 
@@ -210,11 +275,10 @@ Equipe Dr. Henrique Mafra`;
 <Message>${reply}</Message>
 </Response>
 `);
+
     }
 
-    /* detectar horário */
-
-    const detectedTime = extractTime(message);
+    const detectedTime = extractTime(incomingMessage);
 
     if (detectedTime) {
 
@@ -224,11 +288,11 @@ Equipe Dr. Henrique Mafra`;
 
 Os horários disponíveis são:
 
-14h  
-15h  
-16h  
-17h  
-18h  
+14h
+15h
+16h
+17h
+18h
 19h30
 
 Qual deles funciona melhor para você?`;
@@ -238,15 +302,14 @@ Qual deles funciona melhor para você?`;
 <Message>${reply}</Message>
 </Response>
 `);
-      }
 
-      user.date = nextDateText;
+      }
 
       const reply = `Perfeito${user.name ? ", " + user.name : ""} 😊
 
 Seu horário ficou reservado para ${nextDateText} às ${detectedTime}.
 
-Qualquer imprevisto, nos avise com antecedência.
+Qualquer imprevisto, pedimos que nos avise com antecedência.
 
 Equipe Dr. Henrique Mafra`;
 
@@ -255,26 +318,8 @@ Equipe Dr. Henrique Mafra`;
 <Message>${reply}</Message>
 </Response>
 `);
+
     }
-
-    /* confirmação */
-
-    if (isConfirmation(message)) {
-
-      const reply = `Perfeito${user.name ? ", " + user.name : ""} 😊
-
-Seu horário ficou reservado para ${nextDateText} às 19h30.
-
-Equipe Dr. Henrique Mafra`;
-
-      return res.type("text/xml").send(`
-<Response>
-<Message>${reply}</Message>
-</Response>
-`);
-    }
-
-    /* IA NORMAL */
 
     const completion = await openai.chat.completions.create({
 
@@ -296,7 +341,7 @@ Atendimento via WhatsApp.
 
 Nunca falar valores.
 
-Data mínima para agendamento:
+Data mínima disponível:
 ${nextDateText}
 
 Horários disponíveis:
@@ -315,14 +360,11 @@ Terça a Sexta
 
 Sábado apenas exceção 10h.
 
-Nunca inventar datas.
-Nunca inventar horários.
-
-Respostas naturais.
-Curto.
+Respostas curtas.
 WhatsApp real.
+Nunca parecer robô.
 
-Finalizar:
+Finalizar sempre:
 
 Equipe Dr. Henrique Mafra
 `
@@ -341,6 +383,21 @@ Equipe Dr. Henrique Mafra
       content: reply
     });
 
+    if (hasAudio) {
+
+      await generateVoice(reply);
+
+      return res.type("text/xml").send(`
+<Response>
+<Message>
+<Body>${reply}</Body>
+<Media>https://SEU-PROJETO.up.railway.app/audio/reply.mp3</Media>
+</Message>
+</Response>
+`);
+
+    }
+
     res.type("text/xml").send(`
 <Response>
 <Message>${reply}</Message>
@@ -356,6 +413,7 @@ Equipe Dr. Henrique Mafra
 <Message>No momento estamos finalizando atendimentos. Pode me enviar novamente sua mensagem? 😊</Message>
 </Response>
 `);
+
   }
 
 });
