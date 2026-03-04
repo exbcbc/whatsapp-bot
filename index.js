@@ -23,6 +23,7 @@ const CHATWOOT_API = process.env.CHATWOOT_API_URL;
 const CHATWOOT_TOKEN = process.env.CHATWOOT_TOKEN;
 
 const conversations = {};
+const processedMessages = new Set();
 
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
@@ -138,16 +139,10 @@ async function enviarChatwoot(phone,message){
 try{
 
 await axios.post(
-`${CHATWOOT_API}/api/v1/accounts/1/conversations`,
+`${CHATWOOT_API}/public/api/v1/inboxes/1/messages`,
 {
 source_id: phone,
-inbox_id: 1,
-contact:{
-phone_number: phone
-},
-message:{
 content: message
-}
 },
 {
 headers:{
@@ -213,23 +208,6 @@ fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
-async function sendWhatsAppMessage(to,text){
-
-const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
-
-await axios.post(url,new URLSearchParams({
-From:"whatsapp:+14155238886",
-To:to,
-Body:text
-}),{
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-}
-
 async function aiReply(history,nextDateText){
 
 const completion=await openai.chat.completions.create({
@@ -244,7 +222,7 @@ content:`
 
 Você é a assistente da clínica Dr Henrique Mafra.
 
-Fale de forma profissional.
+Fale de forma profissional e natural.
 
 Nunca utilize emojis.
 Nunca informe valores.
@@ -252,6 +230,9 @@ Nunca informe valores.
 Objetivo: levar o paciente para avaliação presencial.
 
 Sempre sugerir primeiro o horário das 19h30.
+
+Somente se o paciente disser que não pode nesse horário
+ofereça horários entre 14h e 18h.
 
 Data mínima para agendamento:
 ${nextDateText}
@@ -274,6 +255,22 @@ return completion.choices[0].message.content;
 app.post("/whatsapp", async(req,res)=>{
 
 try{
+
+const messageSid=req.body.MessageSid;
+
+if(processedMessages.has(messageSid)){
+
+return res.sendStatus(200);
+
+}
+
+processedMessages.add(messageSid);
+
+setTimeout(()=>{
+
+processedMessages.delete(messageSid);
+
+},60000);
 
 const from=req.body.From;
 
