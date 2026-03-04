@@ -23,9 +23,9 @@ const conversations = {};
 const allowedTimes = ["14:00","15:00","16:00","17:00","18:00","19:30"];
 
 
-/* ================================
+/* ===============================
 DATA BRASIL
-================================ */
+=============================== */
 
 function getBrazilDate(){
 
@@ -41,7 +41,7 @@ function nextAvailableDate(){
 
   d.setDate(d.getDate()+5);
 
-  while(d.getDay() === 0 || d.getDay() === 1 || d.getDay() === 6){
+  while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
 
     d.setDate(d.getDate()+1);
 
@@ -66,16 +66,17 @@ function formatDate(date){
 }
 
 
-/* ================================
+/* ===============================
 DETECTAR NOME
-================================ */
+=============================== */
 
 function detectName(msg){
 
-  const match = msg.match(/meu nome é ([A-Za-zÀ-ú]+)/i)
-    || msg.match(/me chamo ([A-Za-zÀ-ú]+)/i)
-    || msg.match(/sou o ([A-Za-zÀ-ú]+)/i)
-    || msg.match(/sou a ([A-Za-zÀ-ú]+)/i);
+  const match =
+    msg.match(/meu nome é ([A-Za-zÀ-ú]+)/i) ||
+    msg.match(/me chamo ([A-Za-zÀ-ú]+)/i) ||
+    msg.match(/sou o ([A-Za-zÀ-ú]+)/i) ||
+    msg.match(/sou a ([A-Za-zÀ-ú]+)/i);
 
   if(match) return match[1];
 
@@ -84,9 +85,9 @@ function detectName(msg){
 }
 
 
-/* ================================
+/* ===============================
 DETECTAR PROCEDIMENTO
-================================ */
+=============================== */
 
 function detectProcedure(msg){
 
@@ -101,10 +102,10 @@ function detectProcedure(msg){
   if(t.includes("papada"))
   return "lipo de papada";
 
-  if(t.includes("vaso") || t.includes("microvaso"))
+  if(t.includes("microvaso") || t.includes("vaso"))
   return "microvasos";
 
-  if(t.includes("mancha") || t.includes("melasma"))
+  if(t.includes("melasma") || t.includes("mancha"))
   return "tratamento de manchas";
 
   if(t.includes("flacidez"))
@@ -115,34 +116,9 @@ function detectProcedure(msg){
 }
 
 
-/* ================================
-CLASSIFICAR LEAD
-================================ */
-
-function classifyLead(msg){
-
-  const t = msg.toLowerCase();
-
-  if(
-    t.includes("quero fazer") ||
-    t.includes("quero agendar") ||
-    t.includes("tem horário")
-  ) return "quente";
-
-  if(
-    t.includes("valor") ||
-    t.includes("preço") ||
-    t.includes("quanto custa")
-  ) return "frio";
-
-  return "morno";
-
-}
-
-
-/* ================================
+/* ===============================
 ÁUDIO
-================================ */
+=============================== */
 
 async function downloadAudio(url){
 
@@ -171,7 +147,6 @@ async function downloadAudio(url){
 
 }
 
-
 async function transcribeAudio(path){
 
   const transcription = await openai.audio.transcriptions.create({
@@ -185,13 +160,12 @@ async function transcribeAudio(path){
 
 }
 
-
 async function generateVoice(text){
 
   const speech = await openai.audio.speech.create({
 
     model:"gpt-4o-mini-tts",
-    voice:"alloy",
+    voice:"nova",   // VOZ FEMININA
     input:text
 
   });
@@ -203,9 +177,9 @@ async function generateVoice(text){
 }
 
 
-/* ================================
-FOLLOW UP AUTOMÁTICO
-================================ */
+/* ===============================
+FOLLOW UP
+=============================== */
 
 async function sendWhatsAppMessage(to,text){
 
@@ -228,7 +202,6 @@ async function sendWhatsAppMessage(to,text){
 
 }
 
-
 function scheduleFollowUps(user,phone){
 
   if(user.followupsScheduled) return;
@@ -250,9 +223,9 @@ function scheduleFollowUps(user,phone){
 }
 
 
-/* ================================
+/* ===============================
 IA
-================================ */
+=============================== */
 
 async function aiReply(history,nextDateText){
 
@@ -261,6 +234,7 @@ async function aiReply(history,nextDateText){
     model:"gpt-4o-mini",
 
     messages:[
+
       {
         role:"system",
         content:`
@@ -275,7 +249,7 @@ Nunca informe valores.
 
 Sempre conduza para avaliação presencial.
 
-Horário preferencial: 19h30
+Horário preferencial: 19h30.
 
 Horários disponíveis:
 14h
@@ -291,6 +265,7 @@ ${nextDateText}
 Respostas curtas e naturais.
 
 `
+
       },
 
       ...history
@@ -304,9 +279,9 @@ Respostas curtas e naturais.
 }
 
 
-/* ================================
+/* ===============================
 ROTA WHATSAPP
-================================ */
+=============================== */
 
 app.post("/whatsapp", async(req,res)=>{
 
@@ -335,13 +310,68 @@ app.post("/whatsapp", async(req,res)=>{
         history:[],
         nome:null,
         procedimento:null,
-        lead:null
+        iaAtiva:true
 
       };
 
     }
 
     const user = conversations[from];
+
+
+    /* =========================
+    COMANDOS ADMIN
+    ========================= */
+
+    if(message === "#humano"){
+
+      user.iaAtiva = false;
+
+      return res.type("text/xml").send(`
+<Response>
+<Message>IA desativada nesta conversa.</Message>
+</Response>
+`);
+
+    }
+
+    if(message === "#ia"){
+
+      user.iaAtiva = true;
+
+      return res.type("text/xml").send(`
+<Response>
+<Message>IA reativada.</Message>
+</Response>
+`);
+
+    }
+
+    if(message === "#reset"){
+
+      conversations[from] = {
+
+        history:[],
+        nome:null,
+        procedimento:null,
+        iaAtiva:true
+
+      };
+
+      return res.type("text/xml").send(`
+<Response>
+<Message>Conversa reiniciada.</Message>
+</Response>
+`);
+
+    }
+
+    if(!user.iaAtiva){
+
+      return res.sendStatus(200);
+
+    }
+
 
     const name = detectName(message);
 
@@ -351,14 +381,13 @@ app.post("/whatsapp", async(req,res)=>{
 
     if(procedure) user.procedimento = procedure;
 
-    user.lead = classifyLead(message);
-
     user.history.push({
 
       role:"user",
       content:message
 
     });
+
 
     const nextDateText = formatDate(nextAvailableDate());
 
