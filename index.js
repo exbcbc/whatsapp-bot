@@ -7,56 +7,38 @@ import fs from "fs";
 dotenv.config();
 
 const app = express();
-
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
 app.use("/audio", express.static("./audio"));
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
 
+const allowedTimes = ["14:00","15:00","16:00","17:00","18:00","19:30"];
+
 const conversations = {};
 
-const allowedTimes = [
-"14:00","15:00","16:00","17:00","18:00","19:30"
-];
-
-/* ========================
+/* =======================
 DATA BRASIL
-======================== */
+======================= */
 
 function getBrazilDate(){
-
-  return new Date(
-    new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"})
-  );
-
+  return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
 function nextAvailableDate(){
-
   let d = getBrazilDate();
-
   d.setDate(d.getDate()+5);
 
-  while(
-    d.getDay()===0 ||
-    d.getDay()===1 ||
-    d.getDay()===6
-  ){
+  while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
     d.setDate(d.getDate()+1);
   }
 
   return d;
-
 }
 
 function formatDate(date){
-
   return date.toLocaleDateString("pt-BR",{
     weekday:"long",
     day:"numeric",
@@ -64,12 +46,28 @@ function formatDate(date){
     year:"numeric",
     timeZone:"America/Sao_Paulo"
   });
+}
+
+/* =======================
+DETECTAR NOME
+======================= */
+
+function detectName(msg){
+
+  const match = msg.match(/meu nome é ([A-Za-zÀ-ú]+)/i) ||
+                msg.match(/me chamo ([A-Za-zÀ-ú]+)/i) ||
+                msg.match(/sou a ([A-Za-zÀ-ú]+)/i) ||
+                msg.match(/sou o ([A-Za-zÀ-ú]+)/i);
+
+  if(match) return match[1];
+
+  return null;
 
 }
 
-/* ========================
-PROCEDIMENTO
-======================== */
+/* =======================
+DETECTAR PROCEDIMENTO
+======================= */
 
 function detectProcedure(msg){
 
@@ -82,21 +80,24 @@ function detectProcedure(msg){
   return "preenchimento";
 
   if(t.includes("papada"))
-  return "papada";
+  return "lipo de papada";
 
   if(t.includes("vaso") || t.includes("microvaso"))
   return "microvasos";
 
   if(t.includes("mancha") || t.includes("melasma"))
-  return "manchas";
+  return "tratamento de manchas";
+
+  if(t.includes("flacidez"))
+  return "bioestimulador";
 
   return null;
 
 }
 
-/* ========================
-LEAD
-======================== */
+/* =======================
+CLASSIFICAR LEAD
+======================= */
 
 function classifyLead(msg){
 
@@ -105,25 +106,42 @@ function classifyLead(msg){
   if(
     t.includes("quero fazer") ||
     t.includes("quero agendar") ||
-    t.includes("tem horário") ||
-    t.includes("marcar consulta")
-  )
-  return "quente";
+    t.includes("tem horário")
+  ) return "quente";
 
   if(
     t.includes("quanto custa") ||
     t.includes("valor") ||
     t.includes("preço")
-  )
-  return "frio";
+  ) return "frio";
 
   return "morno";
 
 }
 
-/* ========================
-DOWNLOAD AUDIO
-======================== */
+/* =======================
+OBJEÇÕES
+======================= */
+
+function detectFear(msg){
+
+  const t = msg.toLowerCase();
+
+  return t.includes("artificial") || t.includes("exagerado");
+
+}
+
+function detectPriceCompare(msg){
+
+  const t = msg.toLowerCase();
+
+  return t.includes("mais barato") || t.includes("caro");
+
+}
+
+/* =======================
+ÁUDIO
+======================= */
 
 async function downloadAudio(url){
 
@@ -138,9 +156,7 @@ async function downloadAudio(url){
   });
 
   const path="./audio/input.ogg";
-
-  const writer = fs.createWriteStream(path);
-
+  const writer=fs.createWriteStream(path);
   response.data.pipe(writer);
 
   return new Promise(resolve=>{
@@ -148,10 +164,6 @@ async function downloadAudio(url){
   });
 
 }
-
-/* ========================
-TRANSCRIÇÃO
-======================== */
 
 async function transcribeAudio(path){
 
@@ -164,10 +176,6 @@ async function transcribeAudio(path){
 
 }
 
-/* ========================
-GERAR VOZ
-======================== */
-
 async function generateVoice(text){
 
   const speech = await openai.audio.speech.create({
@@ -177,14 +185,54 @@ async function generateVoice(text){
   });
 
   const buffer = Buffer.from(await speech.arrayBuffer());
-
   fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
-/* ========================
+/* =======================
+FOLLOW UP
+======================= */
+
+async function sendWhatsAppMessage(to,text){
+
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+  await axios.post(url,new URLSearchParams({
+    From: "whatsapp:+14155238886",
+    To: to,
+    Body: text
+  }),{
+    auth:{
+      username:process.env.TWILIO_ACCOUNT_SID,
+      password:process.env.TWILIO_AUTH_TOKEN
+    }
+  });
+
+}
+
+function scheduleFollowUps(user,phone){
+
+  if(user.followupsScheduled) return;
+
+  user.followupsScheduled = true;
+
+  setTimeout(()=>{
+    sendWhatsAppMessage(phone,"Oi 😊 Vi que você estava vendo sobre o procedimento. Se quiser posso verificar um horário para avaliação.");
+  },30*60*1000);
+
+  setTimeout(()=>{
+    sendWhatsAppMessage(phone,"A agenda do Dr. Henrique Mafra costuma ficar bem concorrida. Se quiser posso verificar disponibilidade para você.");
+  },2*60*60*1000);
+
+  setTimeout(()=>{
+    sendWhatsAppMessage(phone,"Se ainda tiver interesse no procedimento, fico à disposição para ajudar com o agendamento.");
+  },24*60*60*1000);
+
+}
+
+/* =======================
 IA
-======================== */
+======================= */
 
 async function aiReply(history,nextDateText){
 
@@ -193,29 +241,23 @@ async function aiReply(history,nextDateText){
     model:"gpt-4o-mini",
 
     messages:[
-
       {
         role:"system",
         content:`
 Você é a assistente da clínica do Dr Henrique Mafra.
 
-Converse como uma atendente real de WhatsApp.
+Converse como uma atendente real.
 
-Nunca assinar mensagens.
+Nunca falar valores.
 
-Nunca parecer robô.
+Sempre conduzir para avaliação.
 
-Nunca falar valores de procedimentos.
+Sugira primeiro o horário das 19h30.
 
-Sempre conduzir para avaliação presencial.
-
-Data mínima para agendamento:
+Data mínima disponível:
 ${nextDateText}
 
-Horário preferencial:
-19h30
-
-Horários possíveis:
+Horários disponíveis:
 14h
 15h
 16h
@@ -223,11 +265,7 @@ Horários possíveis:
 18h
 19h30
 
-Sempre sugerir primeiro 19h30 de forma natural.
-
-Respostas curtas.
-
-Tom simpático e humano.
+Respostas curtas e naturais.
 `
       },
 
@@ -241,9 +279,9 @@ Tom simpático e humano.
 
 }
 
-/* ========================
+/* =======================
 ROTA WHATSAPP
-======================== */
+======================= */
 
 app.post("/whatsapp", async(req,res)=>{
 
@@ -258,39 +296,46 @@ app.post("/whatsapp", async(req,res)=>{
     if(hasAudio){
 
       const mediaUrl=req.body.MediaUrl0;
-
       const path=await downloadAudio(mediaUrl);
-
       message = await transcribeAudio(path);
 
     }
 
     if(!conversations[from]){
-
       conversations[from]={
         history:[],
-        procedure:null,
+        nome:null,
+        procedimento:null,
         lead:null
       };
-
     }
 
     const user = conversations[from];
+
+    const name = detectName(message);
+    if(name) user.nome=name;
+
+    const procedure = detectProcedure(message);
+    if(procedure) user.procedimento=procedure;
+
+    user.lead = classifyLead(message);
 
     user.history.push({
       role:"user",
       content:message
     });
 
-    const procedure = detectProcedure(message);
-    if(procedure) user.procedure = procedure;
+    if(detectFear(message)){
+      const reply="Isso é uma preocupação muito comum 😊 O objetivo do Dr Henrique Mafra é sempre manter naturalidade no resultado.";
+      return res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
+    }
 
-    const lead = classifyLead(message);
-    user.lead = lead;
+    if(detectPriceCompare(message)){
+      const reply="Na clínica do Dr Henrique Mafra o foco é segurança e naturalidade no resultado. Cada caso passa por avaliação personalizada.";
+      return res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
+    }
 
-    const nextDate = nextAvailableDate();
-
-    const nextDateText = formatDate(nextDate);
+    const nextDateText = formatDate(nextAvailableDate());
 
     const reply = await aiReply(user.history,nextDateText);
 
@@ -298,6 +343,8 @@ app.post("/whatsapp", async(req,res)=>{
       role:"assistant",
       content:reply
     });
+
+    scheduleFollowUps(user,from);
 
     if(hasAudio){
 
@@ -314,14 +361,9 @@ app.post("/whatsapp", async(req,res)=>{
 
     }
 
-    res.type("text/xml").send(`
-<Response>
-<Message>${reply}</Message>
-</Response>
-`);
+    res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
   }
-
   catch(err){
 
     console.log(err);
@@ -329,8 +371,7 @@ app.post("/whatsapp", async(req,res)=>{
     res.type("text/xml").send(`
 <Response>
 <Message>
-Tive uma instabilidade agora 😅
-Pode me enviar novamente sua mensagem?
+Tive uma instabilidade agora 😅 Pode me enviar novamente sua mensagem?
 </Message>
 </Response>
 `);
