@@ -13,7 +13,7 @@ app.use(express.json());
 app.use("/audio", express.static("./audio"));
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+apiKey: process.env.OPENAI_API_KEY
 });
 
 const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
@@ -21,338 +21,354 @@ const SHEET_API = "https://sheetdb.io/api/v1/wgkxf59rp8phz";
 
 const conversations = {};
 
-/* ======================
-DATA BRASIL
-====================== */
-
 function getBrazilDate(){
-  return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
+return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
 function nextAvailableDate(){
 
-  let d = getBrazilDate();
+let d=getBrazilDate();
 
-  d.setDate(d.getDate()+5);
+d.setDate(d.getDate()+5);
 
-  while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
-    d.setDate(d.getDate()+1);
-  }
+while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
+d.setDate(d.getDate()+1);
+}
 
-  return d;
+return d;
 }
 
 function formatDate(date){
-  return date.toLocaleDateString("pt-BR",{
-    weekday:"long",
-    day:"numeric",
-    month:"long",
-    year:"numeric",
-    timeZone:"America/Sao_Paulo"
-  });
+return date.toLocaleDateString("pt-BR",{
+weekday:"long",
+day:"numeric",
+month:"long",
+year:"numeric",
+timeZone:"America/Sao_Paulo"
+});
 }
-
-/* ======================
-NOME
-====================== */
 
 function detectName(msg){
 
-  const match =
-    msg.match(/meu nome é ([A-Za-zÀ-ú]+)/i) ||
-    msg.match(/me chamo ([A-Za-zÀ-ú]+)/i) ||
-    msg.match(/sou o ([A-Za-zÀ-ú]+)/i) ||
-    msg.match(/sou a ([A-Za-zÀ-ú]+)/i);
+const match =
+msg.match(/meu nome é ([A-Za-zÀ-ú]+)/i) ||
+msg.match(/me chamo ([A-Za-zÀ-ú]+)/i) ||
+msg.match(/sou o ([A-Za-zÀ-ú]+)/i) ||
+msg.match(/sou a ([A-Za-zÀ-ú]+)/i);
 
-  if(match) return match[1];
+if(match) return match[1];
 
-  return null;
+return null;
+
 }
-
-/* ======================
-PROCEDIMENTO
-====================== */
 
 function detectProcedure(msg){
 
-  const t = msg.toLowerCase();
+const t=msg.toLowerCase();
 
-  if(t.includes("botox") || t.includes("ruga"))
-  return "botox";
+if(t.includes("botox") || t.includes("ruga"))
+return "botox";
 
-  if(t.includes("preenchimento") || t.includes("lábio") || t.includes("labio"))
-  return "preenchimento";
+if(t.includes("preenchimento") || t.includes("lábio") || t.includes("labio"))
+return "preenchimento";
 
-  if(t.includes("papada"))
-  return "lipo de papada";
+if(t.includes("papada"))
+return "lipo de papada";
 
-  if(t.includes("vaso") || t.includes("microvaso"))
-  return "microvasos";
+if(t.includes("vaso"))
+return "microvasos";
 
-  if(t.includes("melasma") || t.includes("mancha"))
-  return "tratamento de manchas";
+if(t.includes("melasma") || t.includes("mancha"))
+return "tratamento de manchas";
 
-  if(t.includes("flacidez"))
-  return "bioestimulador";
+if(t.includes("flacidez"))
+return "bioestimulador";
 
-  return null;
+return null;
+
 }
-
-/* ======================
-LEAD
-====================== */
 
 function classifyLead(msg){
 
-  const t = msg.toLowerCase();
+const t=msg.toLowerCase();
 
-  if(
-    t.includes("quero fazer") ||
-    t.includes("quero agendar") ||
-    t.includes("tem horário")
-  ) return "quente";
+if(
+t.includes("agendar") ||
+t.includes("marcar") ||
+t.includes("horário") ||
+t.includes("disponibilidade")
+) return "quente";
 
-  if(
-    t.includes("preço") ||
-    t.includes("valor") ||
-    t.includes("quanto custa")
-  ) return "frio";
+if(
+t.includes("valor") ||
+t.includes("preço") ||
+t.includes("quanto custa")
+) return "frio";
 
-  return "morno";
+return "morno";
+
 }
-
-/* ======================
-SALVAR LEAD
-====================== */
 
 async function salvarLead(nome,telefone,procedimento,lead){
 
-  try{
+try{
 
-    await axios.post(SHEET_API,{
-      data:[{
-        data:new Date().toLocaleDateString("pt-BR"),
-        nome:nome || "",
-        telefone:telefone,
-        procedimento:procedimento || "",
-        lead:lead || "",
-        status:"lead",
-        horario:""
-      }]
-    });
+await axios.post(SHEET_API,{
+data:[{
+data:new Date().toLocaleDateString("pt-BR"),
+nome:nome || "",
+telefone:telefone,
+procedimento:procedimento || "",
+lead:lead || "",
+status:"lead"
+}]
+});
 
-  }catch(e){
-    console.log("Erro salvar lead",e.message);
-  }
+}catch(e){
+
+console.log("Erro salvar lead");
+
 }
 
-/* ======================
-ÁUDIO
-====================== */
+}
 
 async function downloadAudio(url){
 
-  const response = await axios({
-    url,
-    method:"GET",
-    responseType:"stream",
-    auth:{
-      username:process.env.TWILIO_ACCOUNT_SID,
-      password:process.env.TWILIO_AUTH_TOKEN
-    }
-  });
+const response=await axios({
+url,
+method:"GET",
+responseType:"stream",
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
 
-  const path="./audio/input.ogg";
+const path="./audio/input.ogg";
 
-  const writer=fs.createWriteStream(path);
+const writer=fs.createWriteStream(path);
 
-  response.data.pipe(writer);
+response.data.pipe(writer);
 
-  return new Promise(resolve=>{
-    writer.on("finish",()=>resolve(path));
-  });
+return new Promise(resolve=>{
+writer.on("finish",()=>resolve(path));
+});
+
 }
 
 async function transcribeAudio(path){
 
-  const transcription = await openai.audio.transcriptions.create({
-    file: fs.createReadStream(path),
-    model:"gpt-4o-transcribe"
-  });
+const transcription=await openai.audio.transcriptions.create({
+file:fs.createReadStream(path),
+model:"gpt-4o-transcribe"
+});
 
-  return transcription.text;
+return transcription.text;
+
 }
 
 async function generateVoice(text){
 
-  const speech = await openai.audio.speech.create({
-    model:"gpt-4o-mini-tts",
-    voice:"nova",
-    input:text
-  });
+const speech=await openai.audio.speech.create({
+model:"gpt-4o-mini-tts",
+voice:"nova",
+input:text
+});
 
-  const buffer = Buffer.from(await speech.arrayBuffer());
+const buffer=Buffer.from(await speech.arrayBuffer());
 
-  fs.writeFileSync("./audio/reply.mp3",buffer);
+fs.writeFileSync("./audio/reply.mp3",buffer);
+
 }
 
-/* ======================
-IA
-====================== */
+async function sendWhatsAppMessage(to,text){
+
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+await axios.post(url,new URLSearchParams({
+From:"whatsapp:+14155238886",
+To:to,
+Body:text
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+}
+
+function scheduleFollowUps(user,phone){
+
+if(user.followupsScheduled) return;
+
+user.followupsScheduled=true;
+
+setTimeout(()=>{
+sendWhatsAppMessage(phone,
+"Vi que você estava vendo sobre o procedimento. Posso verificar um horário de avaliação para você."
+);
+},10*60*1000);
+
+setTimeout(()=>{
+sendWhatsAppMessage(phone,
+"A agenda do Dr Henrique Mafra costuma ficar concorrida. Posso verificar disponibilidade para você."
+);
+},2*60*60*1000);
+
+setTimeout(()=>{
+sendWhatsAppMessage(phone,
+"Alguns horários desta semana já foram preenchidos. Se quiser garantir sua avaliação posso verificar disponibilidade."
+);
+},24*60*60*1000);
+
+}
 
 async function aiReply(history,nextDateText){
 
-  const completion = await openai.chat.completions.create({
+const completion=await openai.chat.completions.create({
 
-    model:"gpt-4o-mini",
+model:"gpt-4o-mini",
 
-    messages:[
+messages:[
 
-      {
-        role:"system",
-        content:`
+{
+role:"system",
+content:`
 
 Você é a assistente da clínica do Dr Henrique Mafra.
 
-Fale como uma atendente profissional.
+Fale de forma profissional e natural.
 
 Nunca utilize emojis.
+
 Nunca informe valores.
 
-OBJETIVO PRINCIPAL:
-Levar o paciente para avaliação presencial.
-
-REGRAS DE AGENDAMENTO:
+Objetivo: levar o paciente para avaliação presencial.
 
 Sempre sugerir primeiro o horário das 19h30.
 
-Nunca listar todos os horários disponíveis.
+Nunca listar todos os horários.
 
 Exemplo correto:
 "Posso verificar um horário às 19h30 para você."
 
-Somente se o paciente disser que não pode às 19h30,
-então ofereça horários entre 14h e 18h.
-
-Nunca comece oferecendo vários horários.
+Somente se o paciente disser que não pode nesse horário
+ofereça horários entre 14h e 18h.
 
 Data mínima para agendamento:
 ${nextDateText}
 
-Respostas curtas e naturais.
+Respostas curtas.
 
 `
+},
 
-      },
+...history
 
-      ...history
+]
 
-    ]
+});
 
-  });
+return completion.choices[0].message.content;
 
-  return completion.choices[0].message.content;
 }
-
-/* ======================
-ROTA WHATSAPP
-====================== */
 
 app.post("/whatsapp", async(req,res)=>{
 
-  try{
+try{
 
-    const from=req.body.From;
+const from=req.body.From;
 
-    const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
+const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
 
-    let message=req.body.Body || "";
+let message=req.body.Body || "";
 
-    if(hasAudio){
+if(hasAudio){
 
-      const mediaUrl=req.body.MediaUrl0;
+const mediaUrl=req.body.MediaUrl0;
 
-      const path=await downloadAudio(mediaUrl);
+const path=await downloadAudio(mediaUrl);
 
-      message=await transcribeAudio(path);
+message=await transcribeAudio(path);
 
-    }
+}
 
-    if(!conversations[from]){
+if(!conversations[from]){
 
-      conversations[from]={
-        history:[],
-        nome:null,
-        procedimento:null,
-        lead:null
-      };
+conversations[from]={
+history:[],
+nome:null,
+procedimento:null,
+lead:null,
+iaAtiva:true
+};
 
-    }
+}
 
-    const user=conversations[from];
+const user=conversations[from];
 
-    const name=detectName(message);
-    if(name) user.nome=name;
+if(message==="#humano"){
+user.iaAtiva=false;
+return res.sendStatus(200);
+}
 
-    const procedure=detectProcedure(message);
-    if(procedure) user.procedimento=procedure;
+if(message==="#ia"){
+user.iaAtiva=true;
+return res.sendStatus(200);
+}
 
-    user.lead=classifyLead(message);
+if(message==="#reset"){
+conversations[from]={history:[],nome:null,procedimento:null,lead:null,iaAtiva:true};
+return res.sendStatus(200);
+}
 
-    await salvarLead(user.nome,from,user.procedimento,user.lead);
+if(!user.iaAtiva){
+return res.sendStatus(200);
+}
 
-    user.history.push({
-      role:"user",
-      content:message
-    });
+const name=detectName(message);
+if(name) user.nome=name;
 
-    const nextDateText=formatDate(nextAvailableDate());
+const procedure=detectProcedure(message);
+if(procedure) user.procedimento=procedure;
 
-    const reply=await aiReply(user.history,nextDateText);
+user.lead=classifyLead(message);
 
-    user.history.push({
-      role:"assistant",
-      content:reply
-    });
+await salvarLead(user.nome,from,user.procedimento,user.lead);
 
-    if(hasAudio){
+user.history.push({role:"user",content:message});
 
-      await generateVoice(reply);
+const nextDateText=formatDate(nextAvailableDate());
 
-      return res.type("text/xml").send(`
-<Response>
-<Message>
-<Media>${DOMAIN}/audio/reply.mp3</Media>
-</Message>
-</Response>
-`);
+const reply=await aiReply(user.history,nextDateText);
 
-    }
+user.history.push({role:"assistant",content:reply});
 
-    res.type("text/xml").send(`
-<Response>
-<Message>${reply}</Message>
-</Response>
-`);
+scheduleFollowUps(user,from);
 
-  }
+if(hasAudio){
 
-  catch(err){
+await generateVoice(reply);
 
-    console.log(err);
+return res.type("text/xml").send(`<Response> <Message> <Media>${DOMAIN}/audio/reply.mp3</Media> </Message> </Response>`);
 
-    res.type("text/xml").send(`
-<Response>
-<Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message>
-</Response>
-`);
+}
 
-  }
+res.type("text/xml").send(`<Response> <Message>${reply}</Message> </Response>`);
+
+}catch(err){
+
+console.log(err);
+
+res.type("text/xml").send(`<Response> <Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message> </Response>`);
+
+}
 
 });
 
 const PORT=process.env.PORT || 8080;
 
 app.listen(PORT,()=>{
-  console.log("Servidor rodando");
+console.log("Servidor rodando");
 });
