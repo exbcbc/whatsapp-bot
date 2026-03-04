@@ -6,6 +6,11 @@ import fs from "fs";
 
 dotenv.config();
 
+/* garante pasta de áudio */
+if (!fs.existsSync("./audio")){
+fs.mkdirSync("./audio");
+}
+
 const app = express();
 
 app.use(express.urlencoded({ extended: true }));
@@ -25,6 +30,8 @@ const CHATWOOT_TOKEN = process.env.CHATWOOT_TOKEN;
 const conversations = {};
 const processedMessages = new Set();
 
+/* DATA BRASIL */
+
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
@@ -32,7 +39,6 @@ return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}
 function nextAvailableDate(){
 
 let d=getBrazilDate();
-
 d.setDate(d.getDate()+5);
 
 while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
@@ -52,6 +58,8 @@ timeZone:"America/Sao_Paulo"
 });
 }
 
+/* DETECÇÕES */
+
 function detectName(msg){
 
 const match =
@@ -61,7 +69,6 @@ msg.match(/sou o ([A-Za-zÀ-ú]+)/i) ||
 msg.match(/sou a ([A-Za-zÀ-ú]+)/i);
 
 if(match) return match[1];
-
 return null;
 
 }
@@ -70,23 +77,12 @@ function detectProcedure(msg){
 
 const t=msg.toLowerCase();
 
-if(t.includes("botox") || t.includes("ruga"))
-return "botox";
-
-if(t.includes("preenchimento") || t.includes("lábio") || t.includes("labio"))
-return "preenchimento";
-
-if(t.includes("papada"))
-return "lipo de papada";
-
-if(t.includes("vaso"))
-return "microvasos";
-
-if(t.includes("melasma") || t.includes("mancha"))
-return "tratamento de manchas";
-
-if(t.includes("flacidez"))
-return "bioestimulador";
+if(t.includes("botox") || t.includes("ruga")) return "botox";
+if(t.includes("preenchimento") || t.includes("lábio") || t.includes("labio")) return "preenchimento";
+if(t.includes("papada")) return "lipo de papada";
+if(t.includes("vaso")) return "microvasos";
+if(t.includes("melasma") || t.includes("mancha")) return "tratamento manchas";
+if(t.includes("flacidez")) return "bioestimulador";
 
 return null;
 
@@ -96,20 +92,14 @@ function classifyLead(msg){
 
 const t=msg.toLowerCase();
 
-if(
-t.includes("agendar") ||
-t.includes("marcar") ||
-t.includes("horário")
-) return "quente";
-
-if(
-t.includes("valor") ||
-t.includes("preço")
-) return "frio";
+if(t.includes("agendar") || t.includes("marcar") || t.includes("horário")) return "quente";
+if(t.includes("valor") || t.includes("preço")) return "frio";
 
 return "morno";
 
 }
+
+/* SALVAR LEAD */
 
 async function salvarLead(nome,telefone,procedimento,lead){
 
@@ -127,12 +117,12 @@ status:"lead"
 });
 
 }catch(e){
-
-console.log("Erro salvar lead");
-
+console.log("erro salvar lead");
 }
 
 }
+
+/* ENVIAR PARA CHATWOOT */
 
 async function enviarChatwoot(phone,message){
 
@@ -152,12 +142,12 @@ api_access_token: CHATWOOT_TOKEN
 );
 
 }catch(e){
-
-console.log("Erro Chatwoot");
-
+console.log("erro chatwoot");
 }
 
 }
+
+/* BAIXAR ÁUDIO */
 
 async function downloadAudio(url){
 
@@ -172,7 +162,6 @@ password:process.env.TWILIO_AUTH_TOKEN
 });
 
 const path="./audio/input.ogg";
-
 const writer=fs.createWriteStream(path);
 
 response.data.pipe(writer);
@@ -182,6 +171,8 @@ writer.on("finish",()=>resolve(path));
 });
 
 }
+
+/* TRANSCRIÇÃO */
 
 async function transcribeAudio(path){
 
@@ -194,6 +185,8 @@ return transcription.text;
 
 }
 
+/* GERAR VOZ */
+
 async function generateVoice(text){
 
 const speech=await openai.audio.speech.create({
@@ -203,10 +196,11 @@ input:text
 });
 
 const buffer=Buffer.from(await speech.arrayBuffer());
-
 fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
+
+/* RESPOSTA IA */
 
 async function aiReply(history,nextDateText){
 
@@ -220,18 +214,18 @@ messages:[
 role:"system",
 content:`
 
-Você é a assistente da clínica Dr Henrique Mafra.
+Você é assistente da clínica Dr Henrique Mafra.
 
-Fale de forma profissional e natural.
+Fale profissionalmente.
 
-Nunca utilize emojis.
+Nunca use emojis.
 Nunca informe valores.
 
-Objetivo: levar o paciente para avaliação presencial.
+Objetivo: levar paciente para avaliação presencial.
 
-Sempre sugerir primeiro o horário das 19h30.
+Sempre sugerir primeiro horário às 19h30.
 
-Somente se o paciente disser que não pode nesse horário
+Somente se paciente disser que não pode,
 ofereça horários entre 14h e 18h.
 
 Data mínima para agendamento:
@@ -252,24 +246,24 @@ return completion.choices[0].message.content;
 
 }
 
+/* ROTA WHATSAPP */
+
 app.post("/whatsapp", async(req,res)=>{
 
 try{
 
 const messageSid=req.body.MessageSid;
 
+/* evita duplicação Twilio */
+
 if(processedMessages.has(messageSid)){
-
 return res.sendStatus(200);
-
 }
 
 processedMessages.add(messageSid);
 
 setTimeout(()=>{
-
 processedMessages.delete(messageSid);
-
 },60000);
 
 const from=req.body.From;
@@ -277,6 +271,8 @@ const from=req.body.From;
 const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
 
 let message=req.body.Body || "";
+
+/* áudio */
 
 if(hasAudio){
 
@@ -287,6 +283,8 @@ const path=await downloadAudio(mediaUrl);
 message=await transcribeAudio(path);
 
 }
+
+/* criar conversa */
 
 if(!conversations[from]){
 
@@ -304,41 +302,30 @@ const user=conversations[from];
 
 const msg=message.trim().toLowerCase();
 
+/* comandos */
+
 if(msg==="#humano"){
-
 user.iaAtiva=false;
-
 return res.type("text/xml").send(`<Response></Response>`);
-
 }
 
 if(msg==="#ia"){
-
 user.iaAtiva=true;
-
 return res.type("text/xml").send(`<Response></Response>`);
-
 }
 
 if(msg==="#reset"){
-
-conversations[from]={
-history:[],
-nome:null,
-procedimento:null,
-lead:null,
-iaAtiva:true
-};
-
+conversations[from]={history:[],nome:null,procedimento:null,lead:null,iaAtiva:true};
 return res.type("text/xml").send(`<Response></Response>`);
-
 }
+
+/* humano assumiu */
 
 if(!user.iaAtiva){
-
 return res.type("text/xml").send(`<Response></Response>`);
-
 }
+
+/* análise */
 
 const name=detectName(message);
 if(name) user.nome=name;
@@ -348,9 +335,15 @@ if(procedure) user.procedimento=procedure;
 
 user.lead=classifyLead(message);
 
+/* salvar lead */
+
 await salvarLead(user.nome,from,user.procedimento,user.lead);
 
+/* enviar chatwoot */
+
 await enviarChatwoot(from,message);
+
+/* histórico */
 
 user.history.push({role:"user",content:message});
 
@@ -360,25 +353,45 @@ const reply=await aiReply(user.history,nextDateText);
 
 user.history.push({role:"assistant",content:reply});
 
+/* áudio resposta */
+
 if(hasAudio){
 
 await generateVoice(reply);
 
-return res.type("text/xml").send(`<Response><Message><Media>${DOMAIN}/audio/reply.mp3</Media></Message></Response>`);
+return res.type("text/xml").send(
+`<Response>
+<Message>
+<Media>${DOMAIN}/audio/reply.mp3</Media>
+</Message>
+</Response>`
+);
 
 }
 
-res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
+/* resposta texto */
+
+res.type("text/xml").send(
+`<Response>
+<Message>${reply}</Message>
+</Response>`
+);
 
 }catch(err){
 
 console.log(err);
 
-res.type("text/xml").send(`<Response><Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message></Response>`);
+res.type("text/xml").send(
+`<Response>
+<Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message>
+</Response>`
+);
 
 }
 
 });
+
+/* servidor */
 
 const PORT=process.env.PORT || 8080;
 
