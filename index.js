@@ -7,10 +7,8 @@ import fs from "fs";
 dotenv.config();
 
 const app = express();
-
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
 app.use("/audio", express.static("./audio"));
 
 const openai = new OpenAI({
@@ -19,302 +17,175 @@ const openai = new OpenAI({
 
 const conversations = {};
 
-/* =========================
-DATA BRASIL
-========================= */
+const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
 
-function getBrazilDate() {
-  return new Date(
-    new Date().toLocaleString("en-US", {
-      timeZone: "America/Sao_Paulo"
-    })
-  );
+const allowedTimes = ["14:00","15:00","16:00","17:00","18:00","19:30"];
+
+/* =======================
+DATA BRASIL
+======================= */
+
+function getBrazilDate(){
+  return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
-/* =========================
-PRÓXIMO DIA DISPONÍVEL
-========================= */
+function nextDate(){
 
-function getNextAvailableDate() {
+  let d = getBrazilDate();
+  d.setDate(d.getDate()+5);
 
-  let date = getBrazilDate();
-
-  date.setDate(date.getDate() + 5);
-
-  while (
-    date.getDay() === 0 ||
-    date.getDay() === 1 ||
-    date.getDay() === 6
-  ) {
-    date.setDate(date.getDate() + 1);
+  while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
+    d.setDate(d.getDate()+1);
   }
 
-  return date;
+  return d;
 }
 
-/* =========================
-FORMATAR DATA
-========================= */
+function formatDate(date){
 
-function formatDate(date) {
-
-  return date.toLocaleDateString("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric"
+  return date.toLocaleDateString("pt-BR",{
+    weekday:"long",
+    day:"numeric",
+    month:"long",
+    year:"numeric",
+    timeZone:"America/Sao_Paulo"
   });
 
 }
 
-/* =========================
-EXTRAIR NOME
-========================= */
+/* =======================
+DETECTAR PROCEDIMENTO
+======================= */
 
-function extractName(message) {
+function detectProcedure(msg){
 
-  const patterns = [
-    /me chamo\s+([a-zA-ZÀ-ú]+)/i,
-    /meu nome é\s+([a-zA-ZÀ-ú]+)/i,
-    /sou a\s+([a-zA-ZÀ-ú]+)/i,
-    /sou o\s+([a-zA-ZÀ-ú]+)/i
-  ];
+  const t = msg.toLowerCase();
 
-  for (let p of patterns) {
+  if(t.includes("botox") || t.includes("ruga") || t.includes("testa"))
+    return "Botox";
 
-    const match = message.match(p);
+  if(t.includes("lábio") || t.includes("labio") || t.includes("bigode chinês"))
+    return "Preenchimento";
 
-    if (match) return match[1];
+  if(t.includes("papada"))
+    return "Lipo de Papada";
 
-  }
+  if(t.includes("vaso") || t.includes("microvaso"))
+    return "Microvasos";
+
+  if(t.includes("mancha") || t.includes("melasma"))
+    return "Tratamento de Manchas";
 
   return null;
 
 }
 
-/* =========================
-EXTRAIR HORÁRIO
-========================= */
+/* =======================
+CLASSIFICAR LEAD
+======================= */
 
-function extractTime(text) {
+function classifyLead(msg){
 
-  const match = text.match(/\b([01]?\d|2[0-3])[:h]?([0-5]\d)?/);
+  const t = msg.toLowerCase();
 
-  if (!match) return null;
+  if(
+    t.includes("quero fazer") ||
+    t.includes("quero agendar") ||
+    t.includes("tem horário") ||
+    t.includes("marcar consulta")
+  ) return "quente";
 
-  let hour = match[1].padStart(2, "0");
-  let minute = match[2] ? match[2] : "00";
-
-  return `${hour}:${minute}`;
-
-}
-
-/* =========================
-DETECTAR PREÇO
-========================= */
-
-function priceIntent(text) {
-
-  const t = text.toLowerCase();
-
-  return (
-    t.includes("valor") ||
-    t.includes("preço") ||
+  if(
     t.includes("quanto custa") ||
-    t.includes("custa quanto")
-  );
+    t.includes("valor") ||
+    t.includes("preço")
+  ) return "frio";
+
+  return "morno";
 
 }
 
-/* =========================
-DOWNLOAD ÁUDIO
-========================= */
+/* =======================
+ÁUDIO
+======================= */
 
-async function downloadAudio(url) {
+async function downloadAudio(url){
 
-  const response = await axios({
+  const res = await axios({
     url,
-    method: "GET",
-    responseType: "stream",
-    auth: {
-      username: process.env.TWILIO_ACCOUNT_SID,
-      password: process.env.TWILIO_AUTH_TOKEN
+    method:"GET",
+    responseType:"stream",
+    auth:{
+      username:process.env.TWILIO_ACCOUNT_SID,
+      password:process.env.TWILIO_AUTH_TOKEN
     }
   });
 
-  const path = "./audio/audio.ogg";
+  const path="./audio/input.ogg";
+  const writer=fs.createWriteStream(path);
 
-  const writer = fs.createWriteStream(path);
+  res.data.pipe(writer);
 
-  response.data.pipe(writer);
-
-  return new Promise((resolve) => {
-    writer.on("finish", () => resolve(path));
+  return new Promise(resolve=>{
+    writer.on("finish",()=>resolve(path));
   });
 
 }
 
-/* =========================
-TRANSCRIÇÃO
-========================= */
+async function transcribeAudio(path){
 
-async function transcribeAudio(path) {
-
-  const transcription = await openai.audio.transcriptions.create({
+  const tr = await openai.audio.transcriptions.create({
     file: fs.createReadStream(path),
     model: "gpt-4o-transcribe"
   });
 
-  return transcription.text;
+  return tr.text;
 
 }
 
-/* =========================
-GERAR ÁUDIO
-========================= */
-
-async function generateVoice(text) {
+async function generateVoice(text){
 
   const speech = await openai.audio.speech.create({
-    model: "gpt-4o-mini-tts",
-    voice: "alloy",
-    input: text
+    model:"gpt-4o-mini-tts",
+    voice:"alloy",
+    input:text
   });
 
   const buffer = Buffer.from(await speech.arrayBuffer());
 
-  const file = "./audio/reply.mp3";
-
-  fs.writeFileSync(file, buffer);
-
-  return file;
+  fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
-/* =========================
-ROTA WHATSAPP
-========================= */
+/* =======================
+RESPOSTA IA
+======================= */
 
-app.post("/whatsapp", async (req, res) => {
+async function aiReply(history,nextDateText){
 
-  try {
+  const completion = await openai.chat.completions.create({
 
-    const from = req.body.From;
+    model:"gpt-4o-mini",
 
-    const hasAudio = req.body.NumMedia && req.body.NumMedia > 0;
+    messages:[
+      {
+        role:"system",
+        content:`
+Você é a assistente da clínica Dr Henrique Mafra.
 
-    let incomingMessage = req.body.Body || "";
+Sempre responder de forma natural como WhatsApp.
 
-    if (hasAudio) {
+Nunca falar valores.
 
-      const mediaUrl = req.body.MediaUrl0;
+Sempre conduzir para avaliação.
 
-      const audioPath = await downloadAudio(mediaUrl);
-
-      incomingMessage = await transcribeAudio(audioPath);
-
-    }
-
-    if (!conversations[from]) {
-
-      conversations[from] = {
-        history: [],
-        name: null
-      };
-
-    }
-
-    const user = conversations[from];
-
-    const detectedName = extractName(incomingMessage);
-
-    if (detectedName) user.name = detectedName;
-
-    user.history.push({
-      role: "user",
-      content: incomingMessage
-    });
-
-    const nextDate = getNextAvailableDate();
-
-    const nextDateText = formatDate(nextDate);
-
-    if (priceIntent(incomingMessage)) {
-
-      const reply = `Entendo sua dúvida 😊
-
-Como cada caso exige uma avaliação personalizada, os valores são informados somente após análise do profissional.
-
-O Dr. Henrique Mafra trabalha com protocolos individualizados para garantir o melhor resultado.
-
-Se quiser, posso verificar um horário para avaliação.
-
-Equipe Dr. Henrique Mafra`;
-
-      return res.type("text/xml").send(`
-<Response>
-<Message>${reply}</Message>
-</Response>
-`);
-
-    }
-
-    const detectedTime = extractTime(incomingMessage);
-
-    if (detectedTime) {
-
-      const reply = `Perfeito${user.name ? ", " + user.name : ""} 😊
-
-Seu horário ficou reservado para ${nextDateText} às ${detectedTime}.
-
-Caso precise alterar, é só avisar.
-
-Endereço da clínica:
-Clínica WF
-Rua 981, 196
-Centro
-Balneário Camboriú
-
-Equipe Dr. Henrique Mafra`;
-
-      return res.type("text/xml").send(`
-<Response>
-<Message>${reply}</Message>
-</Response>
-`);
-
-    }
-
-    const completion = await openai.chat.completions.create({
-
-      model: "gpt-4o-mini",
-
-      messages: [
-
-        {
-          role: "system",
-          content: `
-Você é assistente da clínica do Dr. Henrique Mafra.
-
-Local:
-Clínica WF
-Rua 981 nº196
-Centro
-Balneário Camboriú
-
-Horário de atendimento:
-Terça a sexta
-14h às 20h
-
-Nunca informar valores.
-
-Sempre sugerir avaliação.
-
-Data mínima disponível:
+Agenda mínima:
 ${nextDateText}
 
-Horários possíveis:
+Sugestão principal:
+19h30
+
+Horários disponíveis:
 14h
 15h
 16h
@@ -322,28 +193,79 @@ Horários possíveis:
 18h
 19h30
 
-Respostas curtas e naturais de WhatsApp.
+Sempre sugerir primeiro 19h30.
 
-Finalize sempre com:
-
-Equipe Dr. Henrique Mafra
+Responder curto e humano.
 `
-        },
+      },
 
-        ...user.history
+      ...history
 
-      ]
+    ]
 
-    });
+  });
 
-    const reply = completion.choices[0].message.content;
+  return completion.choices[0].message.content;
+
+}
+
+/* =======================
+ROTA WHATSAPP
+======================= */
+
+app.post("/whatsapp", async(req,res)=>{
+
+  try{
+
+    const from=req.body.From;
+
+    const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
+
+    let message=req.body.Body || "";
+
+    if(hasAudio){
+
+      const mediaUrl=req.body.MediaUrl0;
+      const path=await downloadAudio(mediaUrl);
+
+      message=await transcribeAudio(path);
+
+    }
+
+    if(!conversations[from]){
+
+      conversations[from]={
+        history:[],
+        procedure:null,
+        lead:null
+      };
+
+    }
+
+    const user=conversations[from];
 
     user.history.push({
-      role: "assistant",
-      content: reply
+      role:"user",
+      content:message
     });
 
-    if (hasAudio) {
+    const procedure=detectProcedure(message);
+    if(procedure) user.procedure=procedure;
+
+    const lead=classifyLead(message);
+    user.lead=lead;
+
+    const next=nextDate();
+    const nextDateText=formatDate(next);
+
+    const reply=await aiReply(user.history,nextDateText);
+
+    user.history.push({
+      role:"assistant",
+      content:reply
+    });
+
+    if(hasAudio){
 
       await generateVoice(reply);
 
@@ -351,7 +273,7 @@ Equipe Dr. Henrique Mafra
 <Response>
 <Message>
 <Body>${reply}</Body>
-<Media>https://whatsapp-bot-production-5f72.up.railway.app/audio/reply.mp3</Media>
+<Media>${DOMAIN}/audio/reply.mp3</Media>
 </Message>
 </Response>
 `);
@@ -364,13 +286,16 @@ Equipe Dr. Henrique Mafra
 </Response>
 `);
 
-  } catch (error) {
+  }catch(err){
 
-    console.log(error);
+    console.log(err);
 
     res.type("text/xml").send(`
 <Response>
-<Message>Desculpe, tive uma instabilidade. Pode me enviar novamente sua mensagem? 😊</Message>
+<Message>
+Tive uma instabilidade agora 😅
+Pode me enviar novamente sua mensagem?
+</Message>
 </Response>
 `);
 
@@ -378,8 +303,8 @@ Equipe Dr. Henrique Mafra
 
 });
 
-const PORT = process.env.PORT || 8080;
+const PORT=process.env.PORT || 8080;
 
-app.listen(PORT, () => {
+app.listen(PORT,()=>{
   console.log("Servidor rodando");
 });
