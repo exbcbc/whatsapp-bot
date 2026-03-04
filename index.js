@@ -17,24 +17,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-/* =========================
-MEMÓRIA DE CONVERSA
-========================= */
-
 const conversations = {};
-
-/* =========================
-HORÁRIOS PERMITIDOS
-========================= */
-
-const allowedTimes = [
-  "14:00",
-  "15:00",
-  "16:00",
-  "17:00",
-  "18:00",
-  "19:30"
-];
 
 /* =========================
 DATA BRASIL
@@ -52,7 +35,7 @@ function getBrazilDate() {
 PRÓXIMO DIA DISPONÍVEL
 ========================= */
 
-function getNextBusinessDay() {
+function getNextAvailableDate() {
 
   let date = getBrazilDate();
 
@@ -78,27 +61,10 @@ function formatDate(date) {
   return date.toLocaleDateString("pt-BR", {
     timeZone: "America/Sao_Paulo",
     weekday: "long",
-    day: "2-digit",
+    day: "numeric",
     month: "long",
     year: "numeric"
   });
-
-}
-
-/* =========================
-EXTRAIR HORÁRIO
-========================= */
-
-function extractTime(text) {
-
-  const match = text.match(/\b([01]?\d|2[0-3])[:h]?([0-5]\d)?/);
-
-  if (!match) return null;
-
-  let hour = match[1].padStart(2, "0");
-  let minute = match[2] ? match[2] : "00";
-
-  return `${hour}:${minute}`;
 
 }
 
@@ -128,10 +94,27 @@ function extractName(message) {
 }
 
 /* =========================
+EXTRAIR HORÁRIO
+========================= */
+
+function extractTime(text) {
+
+  const match = text.match(/\b([01]?\d|2[0-3])[:h]?([0-5]\d)?/);
+
+  if (!match) return null;
+
+  let hour = match[1].padStart(2, "0");
+  let minute = match[2] ? match[2] : "00";
+
+  return `${hour}:${minute}`;
+
+}
+
+/* =========================
 DETECTAR PREÇO
 ========================= */
 
-function isPriceObjection(text) {
+function priceIntent(text) {
 
   const t = text.toLowerCase();
 
@@ -139,14 +122,13 @@ function isPriceObjection(text) {
     t.includes("valor") ||
     t.includes("preço") ||
     t.includes("quanto custa") ||
-    t.includes("custa quanto") ||
-    t.includes("parcel")
+    t.includes("custa quanto")
   );
 
 }
 
 /* =========================
-BAIXAR ÁUDIO
+DOWNLOAD ÁUDIO
 ========================= */
 
 async function downloadAudio(url) {
@@ -189,7 +171,7 @@ async function transcribeAudio(path) {
 }
 
 /* =========================
-GERAR VOZ
+GERAR ÁUDIO
 ========================= */
 
 async function generateVoice(text) {
@@ -254,19 +236,19 @@ app.post("/whatsapp", async (req, res) => {
       content: incomingMessage
     });
 
-    const nextDate = getNextBusinessDay();
+    const nextDate = getNextAvailableDate();
 
     const nextDateText = formatDate(nextDate);
 
-    if (isPriceObjection(incomingMessage)) {
+    if (priceIntent(incomingMessage)) {
 
-      const reply = `${user.name ? user.name + ", " : ""}entendo sua dúvida 😊
+      const reply = `Entendo sua dúvida 😊
 
-Como cada caso exige uma avaliação individual, os valores são definidos somente após analisarmos suas necessidades.
+Como cada caso exige uma avaliação personalizada, os valores são informados somente após análise do profissional.
 
-O Dr. Henrique Mafra trabalha com protocolos personalizados para garantir naturalidade e segurança.
+O Dr. Henrique Mafra trabalha com protocolos individualizados para garantir o melhor resultado.
 
-Se quiser, posso verificar uma data para avaliarmos seu caso com calma.
+Se quiser, posso verificar um horário para avaliação.
 
 Equipe Dr. Henrique Mafra`;
 
@@ -282,34 +264,17 @@ Equipe Dr. Henrique Mafra`;
 
     if (detectedTime) {
 
-      if (!allowedTimes.includes(detectedTime)) {
-
-        const reply = `Nesse horário não temos atendimento.
-
-Os horários disponíveis são:
-
-14h
-15h
-16h
-17h
-18h
-19h30
-
-Qual deles funciona melhor para você?`;
-
-        return res.type("text/xml").send(`
-<Response>
-<Message>${reply}</Message>
-</Response>
-`);
-
-      }
-
       const reply = `Perfeito${user.name ? ", " + user.name : ""} 😊
 
 Seu horário ficou reservado para ${nextDateText} às ${detectedTime}.
 
-Qualquer imprevisto, pedimos que nos avise com antecedência.
+Caso precise alterar, é só avisar.
+
+Endereço da clínica:
+Clínica WF
+Rua 981, 196
+Centro
+Balneário Camboriú
 
 Equipe Dr. Henrique Mafra`;
 
@@ -330,22 +295,26 @@ Equipe Dr. Henrique Mafra`;
         {
           role: "system",
           content: `
-Você é a assistente da clínica do Dr. Henrique Mafra.
+Você é assistente da clínica do Dr. Henrique Mafra.
 
+Local:
 Clínica WF
 Rua 981 nº196
 Centro
 Balneário Camboriú
 
-Atendimento via WhatsApp.
+Horário de atendimento:
+Terça a sexta
+14h às 20h
 
-Nunca falar valores.
+Nunca informar valores.
+
+Sempre sugerir avaliação.
 
 Data mínima disponível:
 ${nextDateText}
 
-Horários disponíveis:
-
+Horários possíveis:
 14h
 15h
 16h
@@ -353,18 +322,9 @@ Horários disponíveis:
 18h
 19h30
 
-Funcionamento:
+Respostas curtas e naturais de WhatsApp.
 
-Terça a Sexta
-14h às 20h
-
-Sábado apenas exceção 10h.
-
-Respostas curtas.
-WhatsApp real.
-Nunca parecer robô.
-
-Finalizar sempre:
+Finalize sempre com:
 
 Equipe Dr. Henrique Mafra
 `
@@ -391,7 +351,7 @@ Equipe Dr. Henrique Mafra
 <Response>
 <Message>
 <Body>${reply}</Body>
-<Media>https://SEU-PROJETO.up.railway.app/audio/reply.mp3</Media>
+<Media>https://whatsapp-bot-production-5f72.up.railway.app/audio/reply.mp3</Media>
 </Message>
 </Response>
 `);
@@ -410,7 +370,7 @@ Equipe Dr. Henrique Mafra
 
     res.type("text/xml").send(`
 <Response>
-<Message>No momento estamos finalizando atendimentos. Pode me enviar novamente sua mensagem? 😊</Message>
+<Message>Desculpe, tive uma instabilidade. Pode me enviar novamente sua mensagem? 😊</Message>
 </Response>
 `);
 
