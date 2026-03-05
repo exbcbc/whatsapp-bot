@@ -12,13 +12,13 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 if (!fs.existsSync("./audio")) {
-  fs.mkdirSync("./audio");
+fs.mkdirSync("./audio");
 }
 
 app.use("/audio", express.static("./audio"));
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+apiKey: process.env.OPENAI_API_KEY
 });
 
 const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
@@ -52,61 +52,43 @@ d.setDate(d.getDate()+5);
 while(dates.length<3){
 
 if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
-
 dates.push(new Date(d));
-
 }
 
 d.setDate(d.getDate()+1);
-
 }
 
 return dates;
-
 }
 
 function formatDate(date){
-
 return date.toLocaleDateString("pt-BR",{
 weekday:"long",
 day:"numeric",
 month:"long"
 });
-
 }
 
-async function sendWhatsAppMessage(to,text){
+async function sendWhatsAppMessage(to,text,media=null){
 
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
-await axios.post(url,new URLSearchParams({
+const data={
 From:CLINIC_PHONE,
 To:to,
 Body:text
-}),{
+};
+
+if(media){
+data.MediaUrl=media;
+}
+
+await axios.post(url,new URLSearchParams(data),{
 auth:{
 username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
-
-}
-
-async function sendWhatsAppMedia(to,media){
-
-const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
-
-await axios.post(url,new URLSearchParams({
-From:CLINIC_PHONE,
-To:to,
-MediaUrl:media
-}),{
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
 }
 
 async function downloadAudio(url){
@@ -121,7 +103,7 @@ password:process.env.TWILIO_AUTH_TOKEN
 }
 });
 
-const path="./audio/input.ogg";
+const path=`./audio/input_${Date.now()}.ogg`;
 
 const writer=fs.createWriteStream(path);
 
@@ -130,7 +112,6 @@ response.data.pipe(writer);
 return new Promise(resolve=>{
 writer.on("finish",()=>resolve(path));
 });
-
 }
 
 async function transcribeAudio(path){
@@ -141,7 +122,6 @@ model:"gpt-4o-transcribe"
 });
 
 return transcription.text;
-
 }
 
 async function generateVoice(text){
@@ -154,8 +134,11 @@ input:text
 
 const buffer=Buffer.from(await speech.arrayBuffer());
 
-fs.writeFileSync("./audio/reply.mp3",buffer);
+const file=`reply_${Date.now()}.mp3`;
 
+fs.writeFileSync(`./audio/${file}`,buffer);
+
+return `${DOMAIN}/audio/${file}`;
 }
 
 function isExistingPatient(message){
@@ -170,7 +153,6 @@ text.includes("ja falei com o dr")||
 text.includes("tava falando com o dr")||
 text.includes("estava falando com o dr")
 );
-
 }
 
 async function aiReply(history){
@@ -190,74 +172,52 @@ Seu nome é IAra você é assistente virtual do Dr Henrique Mafra especialista e
 
 Seu objetivo é atender pacientes de forma natural educada e humanizada e conduzir a conversa até o agendamento da consulta.
 
-Você deve seguir EXATAMENTE o fluxo abaixo e nunca pular etapas.
-
-Fluxo do atendimento:
+Fluxo:
 
 1 Cumprimente o paciente.
 
-Exemplo:
-Olá seja bem-vindo sou a Iara assistente virtual do Dr Henrique Mafra. É um prazer falar com você.
+2 Pergunte qual procedimento deseja.
 
-2 Pergunte qual procedimento o paciente deseja.
+3 Explique brevemente o procedimento.
 
-3 Quando o paciente mencionar um procedimento explique brevemente.
+Procedimentos:
 
-Procedimentos realizados:
+Botox
+Preenchimento facial
+Bioestimuladores
+Melasma
+Flacidez
+Lipo de papada
+Remoção de verrugas
+Remoção de tatuagem
 
-Botox  
-Preenchimento facial  
-Bioestimuladores de colágeno  
-Tratamento de melasma  
-Tratamento de flacidez  
-Lipo de papada  
-Remoção de verrugas  
-Remoção de tatuagem  
-
-4 Convide para ver resultados no Instagram:
-
+4 Convide para Instagram
 ${INSTAGRAM}
 
-5 Explique que é necessária consulta de avaliação.
+5 Explique consulta de avaliação.
 
-6 Sobre valores somente quando perguntarem:
+Valor da avaliação: R$150 abatido no procedimento.
 
-A consulta de avaliação tem o valor de R$150 e caso realize o procedimento esse valor é abatido.
+7 Ofereça horários:
 
-7 Ofereça agendamento:
+${formatDate(dates[0])} às 19h30
+${formatDate(dates[1])} às 19h30
+${formatDate(dates[2])} às 19h30
 
-${formatDate(dates[0])} às 19h30  
-${formatDate(dates[1])} às 19h30  
-${formatDate(dates[2])} às 19h30  
+Quando confirmar:
 
-Sempre oferecer primeiro o primeiro horário.
+Perfeito vou reservar.
 
-8 Se não puder oferecer os próximos.
+Dr Henrique confirmará pelo telefone:
 
-9 Priorizar horário 19h30.
-
-10 Se não puder à noite oferecer horário entre 14h e 18h.
-
-11 Nunca sugerir horário antes de ${formatDate(dates[0])}
-
-12 Quando confirmar agendamento:
-
-Perfeito vou deixar seu horário reservado.
-
-O Dr Henrique Mafra entrará em contato com você pelo número particular dele para confirmar os detalhes.
-
-Telefone:
 ${DOCTOR_PHONE}
 
-Endereço da consulta:
+Endereço:
 
 ${CLINIC_ADDRESS}
 
-Regras:
-
 Nunca usar emojis.
-Responder curto.
-Nunca parecer robô.
+Respostas curtas.
 Sempre conduzir para agendamento.
 
 `
@@ -268,10 +228,11 @@ Sempre conduzir para agendamento.
 });
 
 return completion.choices[0].message.content;
-
 }
 
 app.post("/whatsapp",async(req,res)=>{
+
+res.sendStatus(200);
 
 try{
 
@@ -281,12 +242,7 @@ let message=req.body.Body || "";
 const numMedia=parseInt(req.body.NumMedia || 0);
 
 if(!conversations[from]){
-
-conversations[from]={
-history:[],
-lastInteraction:Date.now()
-};
-
+conversations[from]={history:[],lastInteraction:Date.now()};
 }
 
 const user=conversations[from];
@@ -310,16 +266,15 @@ hasAudio=true;
 
 const path=await downloadAudio(mediaUrl);
 
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
-
 message=await transcribeAudio(path);
+
+await sendWhatsAppMessage(ADMIN_PHONE,"Áudio recebido",mediaUrl);
 
 }else{
 
-await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+await sendWhatsAppMessage(ADMIN_PHONE,"Mídia recebida",mediaUrl);
 
 }
-
 }
 
 if(isExistingPatient(message)){
@@ -333,16 +288,15 @@ Telefone:
 ${DOCTOR_PHONE}
 `;
 
-return res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
+await sendWhatsAppMessage(from,reply);
 
+return;
 }
 
-await sendWhatsAppMessage(ADMIN_PHONE,
-`Paciente: ${from}
+await sendWhatsAppMessage(ADMIN_PHONE,`Paciente: ${from}
 
 Mensagem:
-${message}`
-);
+${message}`);
 
 user.history.push({role:"user",content:message});
 
@@ -352,27 +306,23 @@ user.history.push({role:"assistant",content:reply});
 
 if(hasAudio){
 
-await generateVoice(reply);
+const audioUrl=await generateVoice(reply);
 
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
+await sendWhatsAppMessage(from,reply,audioUrl);
 
-return res.type("text/xml").send(`
-<Response>
-<Message>
-<Media>${DOMAIN}/audio/reply.mp3</Media>
-</Message>
-</Response>
-`);
+await sendWhatsAppMessage(ADMIN_PHONE,"Resposta enviada",audioUrl);
+
+}else{
+
+await sendWhatsAppMessage(from,reply);
 
 }
-
-res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
 }catch(err){
 
 console.log(err);
 
-res.type("text/xml").send(`<Response><Message>Erro no servidor.</Message></Response>`);
+await sendWhatsAppMessage(ADMIN_PHONE,"Erro no servidor");
 
 }
 
