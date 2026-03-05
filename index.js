@@ -11,7 +11,7 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-/* AUDIO FOLDER */
+/* AUDIO */
 
 if (!fs.existsSync("./audio")) {
 fs.mkdirSync("./audio");
@@ -27,21 +27,22 @@ apiKey: process.env.OPENAI_API_KEY
 
 /* TWILIO */
 
-const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
+const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
 /* CHATWOOT */
 
-const CHATWOOT_URL = "https://drhm.up.railway.app";
-const CHATWOOT_ACCOUNT = "2";
-const CHATWOOT_TOKEN = "K4iNRKnchfhA2TcmQC1itzzb";
+const CHATWOOT_URL="https://drhm.up.railway.app";
+const ACCOUNT_ID="2";
+const INBOX_ID="1";
+const TOKEN="K4iNRKnchfhA2TcmQC1itzzb";
 
-/* MEMORY */
+/* MEMORIA */
 
-const conversations = {};
+const conversations={};
 
-/* DATA BRASIL */
+/* DATA */
 
-function getBrazilDate() {
+function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
@@ -68,7 +69,7 @@ month:"long"
 
 }
 
-/* BAIXAR AUDIO TWILIO */
+/* DOWNLOAD AUDIO */
 
 async function downloadAudio(url){
 
@@ -127,25 +128,75 @@ return path;
 
 }
 
-/* CHATWOOT LOG */
+/* CHATWOOT */
 
-async function logChatwoot(phone,message){
+/* criar ou buscar contato */
+
+async function getContact(phone){
 
 try{
 
-await axios.post(
-`${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT}/contacts`,
+const res=await axios.get(
+`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/contacts/search?q=${phone}`,
+{
+headers:{api_access_token:TOKEN}
+}
+);
+
+if(res.data.payload.length>0){
+return res.data.payload[0].id;
+}
+
+}catch(e){}
+
+const create=await axios.post(
+`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/contacts`,
 {
 phone_number:phone
 },
 {
-headers:{
-api_access_token:CHATWOOT_TOKEN
-}
+headers:{api_access_token:TOKEN}
 }
 );
 
-}catch(e){}
+return create.data.payload.contact.id;
+
+}
+
+/* criar conversa */
+
+async function createConversation(contactId){
+
+const res=await axios.post(
+`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/conversations`,
+{
+source_id:`${contactId}`,
+inbox_id:INBOX_ID,
+contact_id:contactId
+},
+{
+headers:{api_access_token:TOKEN}
+}
+);
+
+return res.data.id;
+
+}
+
+/* enviar mensagem */
+
+async function sendChatwootMessage(conversationId,text){
+
+await axios.post(
+`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/conversations/${conversationId}/messages`,
+{
+content:text,
+message_type:"incoming"
+},
+{
+headers:{api_access_token:TOKEN}
+}
+);
 
 }
 
@@ -197,7 +248,7 @@ return completion.choices[0].message.content;
 
 }
 
-/* TWILIO WEBHOOK */
+/* WEBHOOK TWILIO */
 
 app.post("/whatsapp",async(req,res)=>{
 
@@ -207,7 +258,7 @@ const from=req.body.From;
 
 let message=req.body.Body || "";
 
-const numMedia=parseInt(req.body.NumMedia || 0);
+const numMedia=parseInt(req.body.NumMedia||0);
 
 let isAudio=false;
 
@@ -229,10 +280,13 @@ message=await transcribeAudio(path);
 
 if(!conversations[from]){
 
+const contactId=await getContact(from);
+
+const conversationId=await createConversation(contactId);
+
 conversations[from]={
-
-history:[]
-
+history:[],
+conversationId
 };
 
 }
@@ -244,9 +298,9 @@ role:"user",
 content:message
 });
 
-/* CHATWOOT LOG */
+/* ENVIAR PARA CHATWOOT */
 
-await logChatwoot(from,message);
+await sendChatwootMessage(user.conversationId,message);
 
 /* IA */
 
@@ -259,7 +313,11 @@ role:"assistant",
 content:reply
 });
 
-/* AUDIO RESPONSE */
+/* CHATWOOT IA */
+
+await sendChatwootMessage(user.conversationId,reply);
+
+/* AUDIO */
 
 if(isAudio){
 
@@ -275,7 +333,7 @@ return res.type("text/xml").send(`
 
 }
 
-/* TEXT RESPONSE */
+/* TEXTO */
 
 res.type("text/xml").send(`
 <Response>
