@@ -29,19 +29,6 @@ function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
-function nextAvailableDate(){
-
-let d=getBrazilDate();
-
-d.setDate(d.getDate()+5);
-
-while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
-d.setDate(d.getDate()+1);
-}
-
-return d;
-}
-
 function formatDate(date){
 
 return date.toLocaleDateString("pt-BR",{
@@ -52,17 +39,27 @@ month:"long"
 
 }
 
-function detectProcedure(msg){
+function nextThreeDates(){
 
-const t=msg.toLowerCase();
+let d=getBrazilDate();
 
-if(t.includes("botox")) return "botox";
-if(t.includes("preenchimento")) return "preenchimento";
-if(t.includes("papada")) return "lipo papada";
-if(t.includes("melasma")) return "melasma";
-if(t.includes("flacidez")) return "bioestimulador";
+d.setDate(d.getDate()+5);
 
-return "";
+const dates=[];
+
+while(dates.length<3){
+
+if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
+
+dates.push(formatDate(new Date(d)));
+
+}
+
+d.setDate(d.getDate()+1);
+
+}
+
+return dates;
 
 }
 
@@ -83,96 +80,7 @@ password:process.env.TWILIO_AUTH_TOKEN
 
 }
 
-async function sendWhatsAppMedia(to,media){
-
-const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
-
-await axios.post(url,new URLSearchParams({
-From:CLINIC_PHONE,
-To:to,
-MediaUrl:media
-}),{
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-}
-
-async function downloadAudio(url){
-
-const response=await axios({
-url,
-method:"GET",
-responseType:"stream",
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-const path="./audio/input.ogg";
-
-const writer=fs.createWriteStream(path);
-
-response.data.pipe(writer);
-
-return new Promise(resolve=>{
-writer.on("finish",()=>resolve(path));
-});
-
-}
-
-async function transcribeAudio(path){
-
-const transcription=await openai.audio.transcriptions.create({
-file:fs.createReadStream(path),
-model:"gpt-4o-transcribe"
-});
-
-return transcription.text;
-
-}
-
-async function generateVoice(text){
-
-const speech=await openai.audio.speech.create({
-model:"gpt-4o-mini-tts",
-voice:"nova",
-input:text
-});
-
-const buffer=Buffer.from(await speech.arrayBuffer());
-
-fs.writeFileSync("./audio/reply.mp3",buffer);
-
-}
-
-function scheduleFollowUps(user,phone){
-
-const nextDateText=formatDate(nextAvailableDate());
-const interaction=user.lastInteraction;
-
-setTimeout(()=>{
-
-if(!conversations[phone])return;
-
-if(conversations[phone].lastInteraction!==interaction)return;
-
-sendWhatsAppMessage(phone,
-`Vi que vocÃª estava vendo sobre procedimentos estÃ©ticos.
-
-Ainda tenho avaliaÃ§Ã£o disponÃ­vel ${nextDateText} Ã s 19h30.
-
-Posso reservar esse horÃ¡rio para vocÃª?`
-);
-
-},10*60*1000);
-
-}
-
-async function aiReply(history,nextDateText){
+async function aiReply(history,dates){
 
 const completion=await openai.chat.completions.create({
 
@@ -183,9 +91,9 @@ messages:[
 role:"system",
 content:`
 
-VocÃª Ã© a assistente da clÃ­nica do Dr Henrique Mafra.
+Você é a assistente da clínica do Dr Henrique Mafra.
 
-Atenda de forma profissional e natural.
+Atenda de forma educada, profissional e natural.
 
 Fluxo da conversa:
 
@@ -194,19 +102,52 @@ Fluxo da conversa:
 2 Pergunte qual procedimento ele deseja avaliar.
 
 Exemplo:
-"Qual procedimento vocÃª gostaria de avaliar?"
+"Qual procedimento você gostaria de avaliar?"
 
-3 Explique que Ã© necessÃ¡rio avaliaÃ§Ã£o.
+3 Explique que é necessária uma avaliação antes de qualquer procedimento.
 
-4 OfereÃ§a agendamento.
+4 Ofereça agendamento.
 
-Formato:
+Horários disponíveis para avaliação:
 
-"O prÃ³ximo dia disponÃ­vel Ã© ${nextDateText} Ã s 19h30. Posso reservar esse horÃ¡rio para vocÃª?"
+${dates[0]} às 19h30  
+${dates[1]} às 19h30  
+${dates[2]} às 19h30  
+
+Sempre ofereça primeiro o primeiro horário.
+
+Exemplo:
+"O próximo horário disponível é ${dates[0]} às 19h30. Posso reservar para você?"
+
+Regras de agenda:
+
+Sempre mencionar dia e horário juntos.
+
+Nunca mencionar apenas o horário.
+
+Priorizar sempre 19h30.
+
+Se o paciente disser que não pode à noite:
+
+ofereça horário alternativo entre 14h e 18h.
+
+Exemplo:
+
+"Podemos verificar ${dates[0]} às 14h ou ${dates[1]} às 16h. Qual fica melhor para você?"
+
+Nunca sugerir horários antes de ${dates[0]}.
+
+Se o paciente confirmar agendamento:
+
+Confirme o dia e horário escolhidos e diga:
+
+"O agendamento foi registrado para ${dates[0]}. O Dr Henrique Mafra entrará em contato para confirmar sua avaliação."
 
 Se perguntarem valores:
 
-"A consulta de avaliaÃ§Ã£o tem valor de R$150 e caso realize o procedimento esse valor Ã© abatido."
+"A consulta de avaliação tem valor de R$150 e caso realize o procedimento esse valor é abatido."
+
+Se mencionarem botox, preenchimento, papada, melasma ou flacidez explique brevemente que a avaliação define o melhor tratamento.
 
 Nunca usar emojis.
 
@@ -228,68 +169,13 @@ app.post("/whatsapp",async(req,res)=>{
 try{
 
 const from=req.body.From;
+
 let message=req.body.Body || "";
-
-const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
-
-if(from===ADMIN_PHONE){
-
-if(message.startsWith("@")){
-
-adminTarget="whatsapp:+"+message.replace("@","").trim();
-
-await sendWhatsAppMessage(ADMIN_PHONE,"Paciente selecionado");
-
-return res.sendStatus(200);
-
-}
-
-if(message.startsWith("#ia")){
-
-const phone="whatsapp:+"+message.replace("#ia","").trim();
-
-if(conversations[phone]){
-conversations[phone].iaAtiva=true;
-}
-
-await sendWhatsAppMessage(ADMIN_PHONE,"IA reativada");
-
-return res.sendStatus(200);
-
-}
-
-if(adminTarget){
-
-if(hasAudio){
-
-const mediaUrl=req.body.MediaUrl0;
-
-const path=await downloadAudio(mediaUrl);
-
-await sendWhatsAppMedia(adminTarget,`${DOMAIN}/audio/input.ogg`);
-
-}else{
-
-await sendWhatsAppMessage(adminTarget,message);
-
-}
-
-if(conversations[adminTarget]){
-conversations[adminTarget].iaAtiva=false;
-}
-
-return res.sendStatus(200);
-
-}
-
-}
 
 if(!conversations[from]){
 
 conversations[from]={
 history:[],
-procedimento:"",
-iaAtiva:true,
 lastInteraction:Date.now()
 };
 
@@ -299,52 +185,13 @@ const user=conversations[from];
 
 user.lastInteraction=Date.now();
 
-if(hasAudio){
-
-const mediaUrl=req.body.MediaUrl0;
-
-const path=await downloadAudio(mediaUrl);
-
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
-
-message=await transcribeAudio(path);
-
-}
-
-await sendWhatsAppMessage(ADMIN_PHONE,
-`Paciente: ${from}
-
-Mensagem:
-${message}`
-);
-
-if(!user.iaAtiva)return res.sendStatus(200);
-
 user.history.push({role:"user",content:message});
 
-const nextDateText=formatDate(nextAvailableDate());
+const dates=nextThreeDates();
 
-const reply=await aiReply(user.history,nextDateText);
+const reply=await aiReply(user.history,dates);
 
 user.history.push({role:"assistant",content:reply});
-
-scheduleFollowUps(user,from);
-
-if(hasAudio){
-
-await generateVoice(reply);
-
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
-
-return res.type("text/xml").send(`
-<Response>
-<Message>
-<Media>${DOMAIN}/audio/reply.mp3</Media>
-</Message>
-</Response>
-`);
-
-}
 
 res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
