@@ -19,6 +19,7 @@ apiKey: process.env.OPENAI_API_KEY
 const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
 const SHEET_API = "https://sheetdb.io/api/v1/wgkxf59rp8phz";
 
+const CLINIC_PHONE = "whatsapp:+554731700136";
 const ADMIN_PHONE = "whatsapp:+5547991812557";
 
 const conversations = {};
@@ -58,44 +59,10 @@ if(t.includes("botox")) return "botox";
 if(t.includes("preenchimento")) return "preenchimento";
 if(t.includes("papada")) return "lipo de papada";
 if(t.includes("vaso")) return "microvasos";
-if(t.includes("melasma")) return "manchas";
+if(t.includes("melasma")) return "melasma";
 if(t.includes("flacidez")) return "bioestimulador";
 
-return null;
-
-}
-
-function classifyLead(msg){
-
-const t=msg.toLowerCase();
-
-if(t.includes("agendar") || t.includes("marcar")) return "quente";
-if(t.includes("valor") || t.includes("preço")) return "frio";
-
-return "morno";
-
-}
-
-async function salvarLead(nome,telefone,procedimento,lead){
-
-try{
-
-await axios.post(SHEET_API,{
-data:[{
-data:new Date().toLocaleDateString("pt-BR"),
-nome:nome || "",
-telefone:telefone,
-procedimento:procedimento || "",
-lead:lead || "",
-status:"lead"
-}]
-});
-
-}catch(e){
-
-console.log("Erro salvar lead");
-
-}
+return "";
 
 }
 
@@ -104,7 +71,7 @@ async function sendWhatsAppMessage(to,text){
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
 await axios.post(url,new URLSearchParams({
-From:"whatsapp:+14155238886",
+From:CLINIC_PHONE,
 To:to,
 Body:text
 }),{
@@ -116,13 +83,15 @@ password:process.env.TWILIO_AUTH_TOKEN
 
 }
 
-async function notifyAdmin(phone,message){
+async function notifyAdmin(phone,message,procedure){
 
 if(phone===ADMIN_PHONE) return;
 
 await sendWhatsAppMessage(
 ADMIN_PHONE,
 `Paciente: ${phone}
+
+Procedimento: ${procedure || "não identificado"}
 
 Mensagem:
 ${message}`
@@ -138,7 +107,6 @@ const interactionTime=user.lastInteraction;
 setTimeout(()=>{
 
 if(!conversations[phone]) return;
-
 if(conversations[phone].lastInteraction!==interactionTime) return;
 
 sendWhatsAppMessage(phone,
@@ -169,16 +137,16 @@ Você é a assistente da clínica do Dr Henrique Mafra.
 
 Atenda de forma profissional e natural.
 
-Fluxo:
+Fluxo da conversa:
 
 1 Cumprimente o paciente.
 
-2 Pergunte qual procedimento ele deseja realizar.
+2 Pergunte qual procedimento ele deseja avaliar.
 
 Exemplo:
 "Qual procedimento você gostaria de avaliar?"
 
-3 Explique que é necessário avaliação.
+3 Explique que é necessário uma avaliação.
 
 4 Ofereça agendamento.
 
@@ -236,14 +204,11 @@ return res.sendStatus(200);
 
 }
 
-await notifyAdmin(from,message);
-
 if(!conversations[from]){
 
 conversations[from]={
 history:[],
-procedimento:null,
-lead:null,
+procedimento:"",
 iaAtiva:true,
 lastInteraction:Date.now()
 };
@@ -254,14 +219,12 @@ const user=conversations[from];
 
 user.lastInteraction=Date.now();
 
-if(!user.iaAtiva) return res.sendStatus(200);
-
 const procedure=detectProcedure(message);
 if(procedure) user.procedimento=procedure;
 
-user.lead=classifyLead(message);
+await notifyAdmin(from,message,user.procedimento);
 
-await salvarLead("",from,user.procedimento,user.lead);
+if(!user.iaAtiva) return res.sendStatus(200);
 
 user.history.push({role:"user",content:message});
 
@@ -285,7 +248,7 @@ res.type("text/xml").send(`<Response><Message>Ocorreu uma instabilidade. Pode en
 
 });
 
-const PORT=process.env.PORT||8080;
+const PORT=process.env.PORT || 8080;
 
 app.listen(PORT,()=>{
 console.log("Servidor rodando");
