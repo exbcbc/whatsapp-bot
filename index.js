@@ -16,28 +16,24 @@ const openai = new OpenAI({
 apiKey: process.env.OPENAI_API_KEY
 });
 
-const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
-const SHEET_API = "https://sheetdb.io/api/v1/wgkxf59rp8phz";
+const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
+const SHEET_API="https://sheetdb.io/api/v1/wgkxf59rp8phz";
 
-const CLINIC_PHONE = "whatsapp:+554731700136";
-const ADMIN_PHONE = "whatsapp:+5547991812557";
+const CLINIC_PHONE="whatsapp:+554731700136";
+const ADMIN_PHONE="whatsapp:+5547991812557";
 
-const conversations = {};
+const conversations={};
 
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
 function nextAvailableDate(){
-
 let d=getBrazilDate();
-
 d.setDate(d.getDate()+5);
-
-while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
+while(d.getDay()===0||d.getDay()===1||d.getDay()===6){
 d.setDate(d.getDate()+1);
 }
-
 return d;
 }
 
@@ -46,8 +42,7 @@ return date.toLocaleDateString("pt-BR",{
 weekday:"long",
 day:"numeric",
 month:"long",
-year:"numeric",
-timeZone:"America/Sao_Paulo"
+year:"numeric"
 });
 }
 
@@ -57,12 +52,30 @@ const t=msg.toLowerCase();
 
 if(t.includes("botox")) return "botox";
 if(t.includes("preenchimento")) return "preenchimento";
-if(t.includes("papada")) return "lipo de papada";
-if(t.includes("vaso")) return "microvasos";
+if(t.includes("papada")) return "lipo papada";
 if(t.includes("melasma")) return "melasma";
 if(t.includes("flacidez")) return "bioestimulador";
 
 return "";
+
+}
+
+async function salvarLead(nome,telefone,procedimento,lead){
+
+try{
+
+await axios.post(SHEET_API,{
+data:[{
+data:new Date().toLocaleDateString("pt-BR"),
+nome:nome||"",
+telefone,
+procedimento,
+lead,
+status:"lead"
+}]
+});
+
+}catch(e){}
 
 }
 
@@ -83,31 +96,82 @@ password:process.env.TWILIO_AUTH_TOKEN
 
 }
 
-async function notifyAdmin(phone,message,procedure){
+async function sendWhatsAppMedia(to,media){
 
-if(phone===ADMIN_PHONE) return;
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
-await sendWhatsAppMessage(
-ADMIN_PHONE,
-`Paciente: ${phone}
+await axios.post(url,new URLSearchParams({
+From:CLINIC_PHONE,
+To:to,
+MediaUrl:media
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
 
-Procedimento: ${procedure || "não identificado"}
+}
 
-Mensagem:
-${message}`
-);
+async function downloadAudio(url){
+
+const response=await axios({
+url,
+method:"GET",
+responseType:"stream",
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+const path="./audio/input.ogg";
+
+const writer=fs.createWriteStream(path);
+
+response.data.pipe(writer);
+
+return new Promise(resolve=>{
+writer.on("finish",()=>resolve(path));
+});
+
+}
+
+async function transcribeAudio(path){
+
+const transcription=await openai.audio.transcriptions.create({
+file:fs.createReadStream(path),
+model:"gpt-4o-transcribe"
+});
+
+return transcription.text;
+
+}
+
+async function generateVoice(text){
+
+const speech=await openai.audio.speech.create({
+model:"gpt-4o-mini-tts",
+voice:"nova",
+input:text
+});
+
+const buffer=Buffer.from(await speech.arrayBuffer());
+
+fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
 function scheduleFollowUps(user,phone){
 
 const nextDateText=formatDate(nextAvailableDate());
-const interactionTime=user.lastInteraction;
+const interaction=user.lastInteraction;
 
 setTimeout(()=>{
 
-if(!conversations[phone]) return;
-if(conversations[phone].lastInteraction!==interactionTime) return;
+if(!conversations[phone])return;
+
+if(conversations[phone].lastInteraction!==interaction)return;
 
 sendWhatsAppMessage(phone,
 `Vi que você estava vendo sobre procedimentos estéticos.
@@ -127,9 +191,7 @@ const completion=await openai.chat.completions.create({
 
 model:"gpt-4o-mini",
 
-messages:[
-
-{
+messages:[{
 role:"system",
 content:`
 
@@ -164,10 +226,7 @@ Respostas curtas.
 
 `
 },
-
-...history
-
-]
+...history]
 
 });
 
@@ -175,12 +234,14 @@ return completion.choices[0].message.content;
 
 }
 
-app.post("/whatsapp", async(req,res)=>{
+app.post("/whatsapp",async(req,res)=>{
 
 try{
 
 const from=req.body.From;
-let message=req.body.Body || "";
+let message=req.body.Body||"";
+
+const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
 
 if(from===ADMIN_PHONE){
 
@@ -197,6 +258,20 @@ await sendWhatsAppMessage(phone,text);
 if(conversations[phone]){
 conversations[phone].iaAtiva=false;
 }
+
+return res.sendStatus(200);
+
+}
+
+if(message.startsWith("#ia")){
+
+const phone="whatsapp:+"+message.replace("#ia","").trim();
+
+if(conversations[phone]){
+conversations[phone].iaAtiva=true;
+}
+
+await sendWhatsAppMessage(ADMIN_PHONE,"IA reativada");
 
 return res.sendStatus(200);
 
@@ -219,12 +294,28 @@ const user=conversations[from];
 
 user.lastInteraction=Date.now();
 
+if(hasAudio){
+
+const mediaUrl=req.body.MediaUrl0;
+
+const path=await downloadAudio(mediaUrl);
+
+await sendWhatsAppMessage(ADMIN_PHONE,`Paciente enviou áudio: ${from}`);
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
+
+message=await transcribeAudio(path);
+
+}
+
 const procedure=detectProcedure(message);
-if(procedure) user.procedimento=procedure;
+if(procedure)user.procedimento=procedure;
 
-await notifyAdmin(from,message,user.procedimento);
+await sendWhatsAppMessage(ADMIN_PHONE,`Paciente: ${from}
 
-if(!user.iaAtiva) return res.sendStatus(200);
+Mensagem:
+${message}`);
+
+if(!user.iaAtiva)return res.sendStatus(200);
 
 user.history.push({role:"user",content:message});
 
@@ -236,19 +327,37 @@ user.history.push({role:"assistant",content:reply});
 
 scheduleFollowUps(user,from);
 
+if(hasAudio){
+
+await generateVoice(reply);
+
+await sendWhatsAppMessage(ADMIN_PHONE,"IA respondeu em áudio");
+
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
+
+return res.type("text/xml").send(
+`<Response>
+<Message>
+<Media>${DOMAIN}/audio/reply.mp3</Media>
+</Message>
+</Response>`
+);
+
+}
+
 res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
 }catch(err){
 
 console.log(err);
 
-res.type("text/xml").send(`<Response><Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message></Response>`);
+res.type("text/xml").send(`<Response><Message>Ocorreu uma instabilidade.</Message></Response>`);
 
 }
 
 });
 
-const PORT=process.env.PORT || 8080;
+const PORT=process.env.PORT||8080;
 
 app.listen(PORT,()=>{
 console.log("Servidor rodando");
