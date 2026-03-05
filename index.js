@@ -10,17 +10,21 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+if (!fs.existsSync("./audio")) {
+  fs.mkdirSync("./audio");
+}
+
 app.use("/audio", express.static("./audio"));
 
 const openai = new OpenAI({
-apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY
 });
 
 const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
 const CLINIC_PHONE="whatsapp:+554731700136";
 const ADMIN_PHONE="whatsapp:+5547991812557";
-
 const INSTAGRAM="https://instagram.com/drhenriquemafra";
 
 const CLINIC_ADDRESS=`
@@ -33,23 +37,32 @@ const DOCTOR_PHONE="47 99188-6417";
 
 const conversations={};
 
-let adminTarget=null;
-
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
-function nextAvailableDate(){
+function nextAvailableDates(){
+
+let dates=[];
 
 let d=getBrazilDate();
 
 d.setDate(d.getDate()+5);
 
-while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
-d.setDate(d.getDate()+1);
+while(dates.length<3){
+
+if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
+
+dates.push(new Date(d));
+
 }
 
-return d;
+d.setDate(d.getDate()+1);
+
+}
+
+return dates;
+
 }
 
 function formatDate(date){
@@ -60,19 +73,6 @@ day:"numeric",
 month:"long"
 });
 
-}
-
-function detectProcedure(msg){
-
-const t=msg.toLowerCase();
-
-if(t.includes("botox")) return "botox";
-if(t.includes("preenchimento")) return "preenchimento";
-if(t.includes("papada")) return "lipo de papada";
-if(t.includes("melasma")) return "tratamento de melasma";
-if(t.includes("flacidez")) return "bioestimulador";
-
-return "";
 }
 
 async function sendWhatsAppMessage(to,text){
@@ -158,32 +158,9 @@ fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
-function scheduleFollowUps(user,phone){
+async function aiReply(history){
 
-const nextDateText=formatDate(nextAvailableDate());
-const interaction=user.lastInteraction;
-
-setTimeout(()=>{
-
-if(!conversations[phone])return;
-
-if(conversations[phone].lastInteraction!==interaction)return;
-
-sendWhatsAppMessage(phone,
-`Vi que você estava vendo sobre procedimentos estéticos com o Dr Henrique Mafra.
-
-Ainda tenho avaliação disponível ${nextDateText} às 19h30.
-
-A consulta serve para avaliar seu caso e indicar o melhor tratamento.
-
-Posso reservar esse horário para você?`
-);
-
-},10*60*1000);
-
-}
-
-async function aiReply(history,nextDateText){
+const dates=nextAvailableDates();
 
 const completion=await openai.chat.completions.create({
 
@@ -207,42 +184,98 @@ Exemplo:
 
 2 Pergunte qual procedimento o paciente deseja avaliar.
 
-3 Explique brevemente os procedimentos quando mencionados.
+Exemplo:
+"Como posso ajudar você hoje? Qual procedimento você gostaria de avaliar?"
+
+3 Quando o paciente mencionar um procedimento, explique brevemente.
 
 O Dr Henrique Mafra realiza tratamentos como:
 
-Botox
-Preenchimento facial
-Bioestimuladores de colágeno
-Tratamento de melasma
-Tratamento de flacidez
-Lipo de papada
-Remoção de verrugas
-Remoção de tatuagem
+Botox  
+Preenchimento facial  
+Bioestimuladores de colágeno  
+Tratamento de melasma  
+Tratamento de flacidez  
+Lipo de papada  
+Remoção de verrugas  
+Remoção de tatuagem  
 
-4 Convide o paciente para acompanhar os resultados no Instagram:
+Explique de forma breve e natural o procedimento.
+
+4 Convide o paciente para acompanhar os resultados da clínica no Instagram:
 
 ${INSTAGRAM}
 
+Exemplo:
+
+"Se quiser acompanhar resultados e o dia a dia da clínica, você também pode ver no nosso Instagram:
+${INSTAGRAM}"
+
 5 Explique que é necessária uma consulta de avaliação.
 
-"Antes de realizar qualquer procedimento é importante fazer uma consulta de avaliação para entender seu caso e indicar o tratamento ideal."
+Exemplo:
 
-6 Fale do valor da consulta somente quando falarem de valores ou agendamento.
+"Antes de realizar qualquer procedimento é importante fazer uma consulta de avaliação para entender melhor seu caso e indicar o tratamento ideal."
 
-"A consulta de avaliação tem o valor de R$150 e caso realize o procedimento esse valor é abatido."
+6 Sobre valores:
 
-7 Ofereça o agendamento:
+Somente quando perguntarem valores ou quando falar de agendamento, informe:
 
-"O próximo horário disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
+"A consulta de avaliação tem o valor de R$150 e caso você realize o procedimento esse valor é abatido."
 
-8 Quando o paciente confirmar:
+7 Ofereça o agendamento.
+
+Horários disponíveis para avaliação:
+
+${dates[0]} às 19h30  
+${dates[1]} às 19h30  
+${dates[2]} às 19h30  
+
+Sempre oferecer primeiro o primeiro horário disponível.
+
+Exemplo:
+
+"O próximo horário disponível é ${dates[0]} às 19h30.
+
+Posso reservar esse horário para você?"
+
+8 Se o paciente disser que não pode nesse dia, ofereça os próximos.
+
+Exemplo:
+
+"Também tenho disponibilidade:
+
+${dates[1]} às 19h30  
+${dates[2]} às 19h30
+
+Algum desses horários funciona para você?"
+
+9 Priorizar sempre horários às 19h30.
+
+10 Se o paciente disser que não pode à noite:
+
+ofereça horário alternativo entre 14h e 18h.
+
+Exemplo:
+
+"Sem problema.
+
+Também podemos verificar um horário durante a tarde, entre 14h e 18h.
+
+Qual horário costuma ser melhor para você?"
+
+11 Nunca sugerir horários antes de ${dates[0]}.
+
+12 Quando o paciente confirmar o agendamento:
+
+Responder:
 
 "Perfeito, vou deixar seu horário reservado.
 
 O Dr Henrique Mafra entrará em contato com você pelo número particular dele para confirmar os detalhes da consulta.
 
-Telefone: ${DOCTOR_PHONE}
+Telefone:
+${DOCTOR_PHONE}
 
 Endereço da consulta:
 
@@ -253,6 +286,7 @@ Regras importantes:
 Nunca usar emojis.
 Responder de forma natural.
 Respostas curtas.
+Nunca parecer robô.
 Sempre conduzir para o agendamento.
 
 `
@@ -273,14 +307,12 @@ try{
 const from=req.body.From;
 let message=req.body.Body || "";
 
-const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
+const numMedia=parseInt(req.body.NumMedia || 0);
 
 if(!conversations[from]){
 
 conversations[from]={
 history:[],
-procedimento:"",
-iaAtiva:true,
 lastInteraction:Date.now()
 };
 
@@ -288,15 +320,28 @@ lastInteraction:Date.now()
 
 const user=conversations[from];
 
-user.lastInteraction=Date.now();
+let hasAudio=false;
 
-if(hasAudio){
+if(numMedia>0){
 
 const mediaUrl=req.body.MediaUrl0;
+const mediaType=req.body.MediaContentType0;
+
+if(mediaType.includes("audio")){
+
+hasAudio=true;
 
 const path=await downloadAudio(mediaUrl);
 
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
+
 message=await transcribeAudio(path);
+
+}else{
+
+await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+
+}
 
 }
 
@@ -309,13 +354,25 @@ ${message}`
 
 user.history.push({role:"user",content:message});
 
-const nextDateText=formatDate(nextAvailableDate());
-
-const reply=await aiReply(user.history,nextDateText);
+const reply=await aiReply(user.history);
 
 user.history.push({role:"assistant",content:reply});
 
-scheduleFollowUps(user,from);
+if(hasAudio){
+
+await generateVoice(reply);
+
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
+
+return res.type("text/xml").send(`
+<Response>
+<Message>
+<Media>${DOMAIN}/audio/reply.mp3</Media>
+</Message>
+</Response>
+`);
+
+}
 
 res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
