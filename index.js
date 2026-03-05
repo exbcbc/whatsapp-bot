@@ -7,18 +7,17 @@ import fs from "fs";
 dotenv.config();
 
 const app = express();
-
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 if (!fs.existsSync("./audio")) {
-  fs.mkdirSync("./audio");
+fs.mkdirSync("./audio");
 }
 
 app.use("/audio", express.static("./audio"));
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+apiKey: process.env.OPENAI_API_KEY
 });
 
 const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
@@ -28,6 +27,10 @@ const ADMIN_PHONE="whatsapp:+5547991812557";
 
 const conversations={};
 
+function generateID(){
+return Math.floor(1000+Math.random()*9000).toString();
+}
+
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
@@ -35,7 +38,6 @@ return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}
 function nextAvailableDates(){
 
 let dates=[];
-
 let d=getBrazilDate();
 
 d.setDate(d.getDate()+5);
@@ -43,9 +45,7 @@ d.setDate(d.getDate()+5);
 while(dates.length<3){
 
 if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
-
 dates.push(new Date(d));
-
 }
 
 d.setDate(d.getDate()+1);
@@ -80,72 +80,6 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
-
-}
-
-async function sendWhatsAppMedia(to,media){
-
-const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
-
-await axios.post(url,new URLSearchParams({
-From:CLINIC_PHONE,
-To:to,
-MediaUrl:media
-}),{
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-}
-
-async function downloadAudio(url){
-
-const response=await axios({
-url,
-method:"GET",
-responseType:"stream",
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-const path="./audio/input.ogg";
-
-const writer=fs.createWriteStream(path);
-
-response.data.pipe(writer);
-
-return new Promise(resolve=>{
-writer.on("finish",()=>resolve(path));
-});
-
-}
-
-async function transcribeAudio(path){
-
-const transcription=await openai.audio.transcriptions.create({
-file:fs.createReadStream(path),
-model:"gpt-4o-transcribe"
-});
-
-return transcription.text;
-
-}
-
-async function generateVoice(text){
-
-const speech=await openai.audio.speech.create({
-model:"gpt-4o-mini-tts",
-voice:"nova",
-input:text
-});
-
-const buffer=Buffer.from(await speech.arrayBuffer());
-
-fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
@@ -224,50 +158,63 @@ try{
 const from=req.body.From;
 let message=req.body.Body || "";
 
-const numMedia=parseInt(req.body.NumMedia || 0);
+
+if(from===ADMIN_PHONE){
+
+const match=message.match(/#(\d+)/);
+
+if(!match) return res.sendStatus(200);
+
+const id=match[1];
+
+const convo=Object.values(conversations).find(c=>c.id===id);
+
+if(!convo) return res.sendStatus(200);
+
+if(message.includes("/bot")){
+convo.bot=true;
+await sendWhatsAppMessage(ADMIN_PHONE,`Bot reativado para #${id}`);
+return res.sendStatus(200);
+}
+
+convo.bot=false;
+
+const cleanMessage=message.replace(`#${id}`,"").trim();
+
+await sendWhatsAppMessage(convo.phone,cleanMessage);
+
+return res.sendStatus(200);
+
+}
+
 
 if(!conversations[from]){
 
 conversations[from]={
+id:generateID(),
+phone:from,
 history:[],
-lastInteraction:Date.now()
+bot:true
 };
 
 }
 
 const user=conversations[from];
 
-let hasAudio=false;
-
-if(numMedia>0){
-
-const mediaUrl=req.body.MediaUrl0;
-const mediaType=req.body.MediaContentType0;
-
-if(mediaType.includes("audio")){
-
-hasAudio=true;
-
-const path=await downloadAudio(mediaUrl);
-
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
-
-message=await transcribeAudio(path);
-
-}else{
-
-await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
-
-}
-
-}
 
 await sendWhatsAppMessage(ADMIN_PHONE,
-`Paciente: ${from}
+`Paciente #${user.id}
+${from}
 
 Mensagem:
 ${message}`
 );
+
+if(!user.bot){
+
+return res.sendStatus(200);
+
+}
 
 user.history.push({role:"user",content:message});
 
@@ -275,31 +222,12 @@ const reply=await aiReply(user.history);
 
 user.history.push({role:"assistant",content:reply});
 
-
-// ✅ ENVIA A RESPOSTA DA IA PARA VOCÊ
 await sendWhatsAppMessage(
 ADMIN_PHONE,
-`Resposta da IA para ${from}:
+`Resposta IA #${user.id}
 
 ${reply}`
 );
-
-
-if(hasAudio){
-
-await generateVoice(reply);
-
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
-
-return res.type("text/xml").send(`
-<Response>
-<Message>
-<Media>${DOMAIN}/audio/reply.mp3</Media>
-</Message>
-</Response>
-`);
-
-}
 
 res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
