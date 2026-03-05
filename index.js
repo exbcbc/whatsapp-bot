@@ -21,133 +21,147 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
+const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
-const CLINIC_PHONE = "whatsapp:+554731700136";
-const ADMIN_PHONE = "whatsapp:+5547991812557";
+const CLINIC_PHONE="whatsapp:+554731700136";
+const ADMIN_PHONE="whatsapp:+5547991812557";
 
-const conversations = {};
+const conversations={};
 
-function getBrazilDate() {
-  return new Date(
-    new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" })
-  );
+function getBrazilDate(){
+return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
-function nextAvailableDates() {
-  let dates = [];
-  let d = getBrazilDate();
+function nextAvailableDates(){
 
-  while (dates.length < 3) {
-    d.setDate(d.getDate() + 1);
+let dates=[];
 
-    if (d.getDay() !== 0 && d.getDay() !== 1 && d.getDay() !== 6) {
-      dates.push(new Date(d));
-    }
-  }
+let d=getBrazilDate();
 
-  return dates;
+d.setDate(d.getDate()+5);
+
+while(dates.length<3){
+
+if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
+
+dates.push(new Date(d));
+
 }
 
-function formatDate(date) {
-  return date.toLocaleDateString("pt-BR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long"
-  });
+d.setDate(d.getDate()+1);
+
 }
 
-async function sendWhatsAppMessage(to, text) {
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+return dates;
 
-  await axios.post(
-    url,
-    new URLSearchParams({
-      From: CLINIC_PHONE,
-      To: to,
-      Body: text
-    }),
-    {
-      auth: {
-        username: process.env.TWILIO_ACCOUNT_SID,
-        password: process.env.TWILIO_AUTH_TOKEN
-      }
-    }
-  );
 }
 
-async function sendWhatsAppMedia(to, media) {
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+function formatDate(date){
 
-  await axios.post(
-    url,
-    new URLSearchParams({
-      From: CLINIC_PHONE,
-      To: to,
-      MediaUrl: media
-    }),
-    {
-      auth: {
-        username: process.env.TWILIO_ACCOUNT_SID,
-        password: process.env.TWILIO_AUTH_TOKEN
-      }
-    }
-  );
+return date.toLocaleDateString("pt-BR",{
+weekday:"long",
+day:"numeric",
+month:"long"
+});
+
 }
 
-async function downloadAudio(url) {
-  const response = await axios({
-    url,
-    method: "GET",
-    responseType: "stream",
-    auth: {
-      username: process.env.TWILIO_ACCOUNT_SID,
-      password: process.env.TWILIO_AUTH_TOKEN
-    }
-  });
+async function sendWhatsAppMessage(to,text){
 
-  const path = "./audio/input.ogg";
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
-  const writer = fs.createWriteStream(path);
+await axios.post(url,new URLSearchParams({
+From:CLINIC_PHONE,
+To:to,
+Body:text
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
 
-  response.data.pipe(writer);
-
-  return new Promise(resolve => {
-    writer.on("finish", () => resolve(path));
-  });
 }
 
-async function transcribeAudio(path) {
-  const transcription = await openai.audio.transcriptions.create({
-    file: fs.createReadStream(path),
-    model: "gpt-4o-transcribe"
-  });
+async function sendWhatsAppMedia(to,media){
 
-  return transcription.text;
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+await axios.post(url,new URLSearchParams({
+From:CLINIC_PHONE,
+To:to,
+MediaUrl:media
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
 }
 
-async function generateVoice(text) {
-  const speech = await openai.audio.speech.create({
-    model: "gpt-4o-mini-tts",
-    voice: "nova",
-    input: text
-  });
+async function downloadAudio(url){
 
-  const buffer = Buffer.from(await speech.arrayBuffer());
+const response=await axios({
+url,
+method:"GET",
+responseType:"stream",
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
 
-  fs.writeFileSync("./audio/reply.mp3", buffer);
+const path="./audio/input.ogg";
+
+const writer=fs.createWriteStream(path);
+
+response.data.pipe(writer);
+
+return new Promise(resolve=>{
+writer.on("finish",()=>resolve(path));
+});
+
 }
 
-async function aiReply(history) {
-  const dates = nextAvailableDates();
+async function transcribeAudio(path){
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+const transcription=await openai.audio.transcriptions.create({
+file:fs.createReadStream(path),
+model:"gpt-4o-transcribe"
+});
 
-    messages: [
-      {
-        role: "system",
-        content: `
+return transcription.text;
+
+}
+
+async function generateVoice(text){
+
+const speech=await openai.audio.speech.create({
+model:"gpt-4o-mini-tts",
+voice:"nova",
+input:text
+});
+
+const buffer=Buffer.from(await speech.arrayBuffer());
+
+fs.writeFileSync("./audio/reply.mp3",buffer);
+
+}
+
+async function aiReply(history){
+
+const dates=nextAvailableDates();
+
+const completion=await openai.chat.completions.create({
+
+model:"gpt-4o-mini",
+
+messages:[
+{
+role:"system",
+content:`
+
 Você é a assistente da clínica do Dr Henrique Mafra.
 
 Atenda de forma educada, profissional e natural.
@@ -161,6 +175,10 @@ Fluxo da conversa:
 3 Explique que é necessária uma avaliação antes de qualquer procedimento.
 
 4 Ofereça agendamento.
+
+Regra obrigatória:
+
+Nunca oferecer datas com menos de 5 dias de antecedência.
 
 Horários disponíveis para avaliação:
 
@@ -187,99 +205,106 @@ Valor:
 Nunca usar emojis.
 
 Respostas curtas.
-`
-      },
-      ...history
-    ]
-  });
 
-  return completion.choices[0].message.content;
+`
+},
+...history
+]
+
+});
+
+return completion.choices[0].message.content;
+
 }
 
-app.post("/whatsapp", async (req, res) => {
-  try {
-    const from = req.body.From;
+app.post("/whatsapp",async(req,res)=>{
 
-    let message = req.body.Body || "";
+try{
 
-    const numMedia = parseInt(req.body.NumMedia || 0);
+const from=req.body.From;
+let message=req.body.Body || "";
 
-    if (!conversations[from]) {
-      conversations[from] = {
-        history: [],
-        lastInteraction: Date.now()
-      };
-    }
+const numMedia=parseInt(req.body.NumMedia || 0);
 
-    const user = conversations[from];
+if(!conversations[from]){
 
-    let hasAudio = false;
+conversations[from]={
+history:[],
+lastInteraction:Date.now()
+};
 
-    if (numMedia > 0) {
-      const mediaUrl = req.body.MediaUrl0;
-      const mediaType = req.body.MediaContentType0;
+}
 
-      if (mediaType.includes("audio")) {
-        hasAudio = true;
+const user=conversations[from];
 
-        const path = await downloadAudio(mediaUrl);
+let hasAudio=false;
 
-        await sendWhatsAppMedia(
-          ADMIN_PHONE,
-          `${DOMAIN}/audio/input.ogg`
-        );
+if(numMedia>0){
 
-        message = await transcribeAudio(path);
-      } else {
-        await sendWhatsAppMedia(ADMIN_PHONE, mediaUrl);
-      }
-    }
+const mediaUrl=req.body.MediaUrl0;
+const mediaType=req.body.MediaContentType0;
 
-    await sendWhatsAppMessage(
-      ADMIN_PHONE,
-      `Paciente: ${from}
+if(mediaType.includes("audio")){
+
+hasAudio=true;
+
+const path=await downloadAudio(mediaUrl);
+
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
+
+message=await transcribeAudio(path);
+
+}else{
+
+await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+
+}
+
+}
+
+await sendWhatsAppMessage(ADMIN_PHONE,
+`Paciente: ${from}
 
 Mensagem:
 ${message}`
-    );
+);
 
-    user.history.push({ role: "user", content: message });
+user.history.push({role:"user",content:message});
 
-    const reply = await aiReply(user.history);
+const reply=await aiReply(user.history);
 
-    user.history.push({ role: "assistant", content: reply });
+user.history.push({role:"assistant",content:reply});
 
-    if (hasAudio) {
-      await generateVoice(reply);
+if(hasAudio){
 
-      await sendWhatsAppMedia(
-        ADMIN_PHONE,
-        `${DOMAIN}/audio/reply.mp3`
-      );
+await generateVoice(reply);
 
-      return res.type("text/xml").send(`
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
+
+return res.type("text/xml").send(`
 <Response>
 <Message>
 <Media>${DOMAIN}/audio/reply.mp3</Media>
 </Message>
 </Response>
 `);
-    }
 
-    res
-      .type("text/xml")
-      .send(`<Response><Message>${reply}</Message></Response>`);
-  } catch (err) {
-    console.log(err);
+}
 
-    res
-      .type("text/xml")
-      .send(`<Response><Message>Erro no servidor.</Message></Response>`);
-  }
+res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
+
+}catch(err){
+
+console.log(err);
+
+res.type("text/xml").send(`<Response><Message>Erro no servidor.</Message></Response>`);
+
+}
+
 });
 
-const PORT = process.env.PORT || 8080;
+const PORT=process.env.PORT||8080;
 
-app.listen(PORT, () => {
-  console.log("Servidor rodando");
+app.listen(PORT,()=>{
+console.log("Servidor rodando");
 });
