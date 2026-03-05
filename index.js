@@ -247,9 +247,12 @@ app.post("/chatwoot",async(req,res)=>{
 
 try{
 
-/* EVITAR LOOP */
+/* EVITAR LOOP DA IA OU AGENTE */
 
-if(req.body.message_type !== "incoming"){
+const messageType=req.body.message_type;
+const senderType=req.body.sender?.type;
+
+if(messageType!=="incoming" || senderType!=="contact"){
 return res.sendStatus(200);
 }
 
@@ -268,11 +271,13 @@ if(!message && req.body.attachments?.length>0){
 
 const attachment=req.body.attachments[0];
 
-if(attachment.data_url){
+const audioUrl=attachment.data_url || attachment.url;
+
+if(audioUrl){
 
 isAudio=true;
 
-const path=await downloadAudio(attachment.data_url);
+const path=await downloadAudio(audioUrl);
 
 message=await transcribeAudio(path);
 
@@ -340,6 +345,7 @@ console.log(err);
 res.sendStatus(500);
 
 }
+
 
 });
 
