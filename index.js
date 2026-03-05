@@ -29,7 +29,7 @@ function nextAvailableDate(){
 
 let d=getBrazilDate();
 
-d.setDate(d.getDate()+5);
+d.setDate(d.getDate()+2);
 
 while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
 d.setDate(d.getDate()+1);
@@ -206,19 +206,19 @@ user.followupsScheduled=true;
 
 setTimeout(()=>{
 sendWhatsAppMessage(phone,
-"Vi que você estava vendo sobre o procedimento. Posso verificar um horário de avaliação para você."
+"Vi que você estava vendo sobre o procedimento. O próximo horário disponível é às 19h30. Posso reservar para você?"
 );
 },10*60*1000);
 
 setTimeout(()=>{
 sendWhatsAppMessage(phone,
-"A agenda do Dr Henrique Mafra costuma ficar concorrida. Posso verificar disponibilidade para você."
+"A agenda do Dr Henrique Mafra costuma ficar concorrida. Posso verificar um horário de avaliação para você às 19h30?"
 );
 },2*60*60*1000);
 
 setTimeout(()=>{
 sendWhatsAppMessage(phone,
-"Alguns horários desta semana já foram preenchidos. Se quiser garantir sua avaliação posso verificar disponibilidade."
+"Alguns horários desta semana já foram preenchidos. Se quiser posso garantir sua avaliação antes que a agenda feche."
 );
 },24*60*60*1000);
 
@@ -238,28 +238,33 @@ content:`
 
 Você é a assistente da clínica do Dr Henrique Mafra.
 
-Fale de forma profissional e natural.
+Seu objetivo é converter o paciente em agendamento.
 
-Nunca utilize emojis.
+REGRAS:
 
-Nunca informe valores.
+Sempre ofereça primeiro o próximo dia disponível às 19h30.
 
-Objetivo: levar o paciente para avaliação presencial.
+Use este formato:
 
-Sempre sugerir primeiro o horário das 19h30.
+"O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
 
-Nunca listar todos os horários.
+Nunca listar vários horários.
 
-Exemplo correto:
-"Posso verificar um horário às 19h30 para você."
+Se a pessoa perguntar valores:
 
-Somente se o paciente disser que não pode nesse horário
-ofereça horários entre 14h e 18h.
+Explique que cada caso precisa de avaliação.
 
-Data mínima para agendamento:
-${nextDateText}
+Diga:
 
-Respostas curtas.
+"A consulta de avaliação tem o valor de R$150. Caso você realize o procedimento no mesmo dia esse valor é abatido do procedimento. Caso não realize, esse é apenas o valor da consulta."
+
+Depois conduza novamente para o agendamento.
+
+Se o paciente demonstrar interesse sempre conduza para agendar.
+
+Respostas curtas, naturais e profissionais.
+
+Nunca usar emojis.
 
 `
 },
