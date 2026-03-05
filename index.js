@@ -308,7 +308,7 @@ if(hasAudio){
 
 const audioUrl=await generateVoice(reply);
 
-await sendWhatsAppMessage(from,reply,audioUrl);
+await sendWhatsAppMessage(from,"",audioUrl);
 
 await sendWhatsAppMessage(ADMIN_PHONE,"Resposta enviada",audioUrl);
 
