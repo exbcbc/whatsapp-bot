@@ -19,6 +19,8 @@ apiKey: process.env.OPENAI_API_KEY
 const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
 const SHEET_API = "https://sheetdb.io/api/v1/wgkxf59rp8phz";
 
+const ADMIN_PHONE = "whatsapp:+5547991812557";
+
 const conversations = {};
 
 function getBrazilDate(){
@@ -48,41 +50,16 @@ timeZone:"America/Sao_Paulo"
 });
 }
 
-function detectName(msg){
-
-const match =
-msg.match(/meu nome é ([A-Za-zÀ-ú]+)/i) ||
-msg.match(/me chamo ([A-Za-zÀ-ú]+)/i) ||
-msg.match(/sou o ([A-Za-zÀ-ú]+)/i) ||
-msg.match(/sou a ([A-Za-zÀ-ú]+)/i);
-
-if(match) return match[1];
-
-return null;
-
-}
-
 function detectProcedure(msg){
 
 const t=msg.toLowerCase();
 
-if(t.includes("botox") || t.includes("ruga"))
-return "botox";
-
-if(t.includes("preenchimento") || t.includes("lábio") || t.includes("labio"))
-return "preenchimento";
-
-if(t.includes("papada"))
-return "lipo de papada";
-
-if(t.includes("vaso"))
-return "microvasos";
-
-if(t.includes("melasma") || t.includes("mancha"))
-return "tratamento de manchas";
-
-if(t.includes("flacidez"))
-return "bioestimulador";
+if(t.includes("botox")) return "botox";
+if(t.includes("preenchimento")) return "preenchimento";
+if(t.includes("papada")) return "lipo de papada";
+if(t.includes("vaso")) return "microvasos";
+if(t.includes("melasma")) return "manchas";
+if(t.includes("flacidez")) return "bioestimulador";
 
 return null;
 
@@ -92,16 +69,8 @@ function classifyLead(msg){
 
 const t=msg.toLowerCase();
 
-if(
-t.includes("agendar") ||
-t.includes("marcar") ||
-t.includes("horário")
-) return "quente";
-
-if(
-t.includes("valor") ||
-t.includes("preço")
-) return "frio";
+if(t.includes("agendar") || t.includes("marcar")) return "quente";
+if(t.includes("valor") || t.includes("preço")) return "frio";
 
 return "morno";
 
@@ -130,6 +99,37 @@ console.log("Erro salvar lead");
 
 }
 
+async function sendWhatsAppMessage(to,text){
+
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+await axios.post(url,new URLSearchParams({
+From:"whatsapp:+14155238886",
+To:to,
+Body:text
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+}
+
+async function notifyAdmin(phone,message){
+
+if(phone===ADMIN_PHONE) return;
+
+await sendWhatsAppMessage(
+ADMIN_PHONE,
+`Paciente: ${phone}
+
+Mensagem:
+${message}`
+);
+
+}
+
 function scheduleFollowUps(user,phone){
 
 const nextDateText=formatDate(nextAvailableDate());
@@ -139,33 +139,17 @@ setTimeout(()=>{
 
 if(!conversations[phone]) return;
 
-if(conversations[phone].lastInteraction !== interactionTime) return;
+if(conversations[phone].lastInteraction!==interactionTime) return;
 
 sendWhatsAppMessage(phone,
 `Vi que você estava vendo sobre procedimentos estéticos.
 
-Caso queira, ainda tenho avaliação disponível ${nextDateText} às 19h30.
+Ainda tenho avaliação disponível ${nextDateText} às 19h30.
 
 Posso reservar esse horário para você?`
 );
 
 },10*60*1000);
-
-setTimeout(()=>{
-
-if(!conversations[phone]) return;
-
-if(conversations[phone].lastInteraction !== interactionTime) return;
-
-sendWhatsAppMessage(phone,
-`A agenda do Dr Henrique Mafra costuma ficar concorrida.
-
-Ainda tenho disponível ${nextDateText} às 19h30 para avaliação.
-
-Posso garantir esse horário para você?`
-);
-
-},60*60*1000);
 
 }
 
@@ -185,30 +169,26 @@ Você é a assistente da clínica do Dr Henrique Mafra.
 
 Atenda de forma profissional e natural.
 
-Fluxo da conversa:
+Fluxo:
 
 1 Cumprimente o paciente.
 
-2 Pergunte qual procedimento ou tratamento ele tem interesse.
+2 Pergunte qual procedimento ele deseja realizar.
 
 Exemplo:
-"Qual procedimento você gostaria de realizar ou avaliar?"
+"Qual procedimento você gostaria de avaliar?"
 
-3 Após entender o interesse, explique que é necessário uma avaliação.
+3 Explique que é necessário avaliação.
 
-4 Então ofereça agendamento.
+4 Ofereça agendamento.
 
-Formato do agendamento:
+Formato:
 
 "O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
 
 Se perguntarem valores:
 
-Explique que cada caso precisa de avaliação.
-
-"A consulta de avaliação tem o valor de R$150. Caso realize o procedimento, esse valor é abatido."
-
-Nunca parecer insistente.
+"A consulta de avaliação tem valor de R$150 e caso realize o procedimento esse valor é abatido."
 
 Nunca usar emojis.
 
@@ -227,23 +207,6 @@ return completion.choices[0].message.content;
 
 }
 
-async function sendWhatsAppMessage(to,text){
-
-const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
-
-await axios.post(url,new URLSearchParams({
-From:"whatsapp:+14155238886",
-To:to,
-Body:text
-}),{
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-}
-
 app.post("/whatsapp", async(req,res)=>{
 
 try{
@@ -251,11 +214,34 @@ try{
 const from=req.body.From;
 let message=req.body.Body || "";
 
+if(from===ADMIN_PHONE){
+
+if(message.startsWith("@")){
+
+const parts=message.split("\n");
+
+const phone="whatsapp:+"+parts[0].replace("@","").trim();
+
+const text=parts.slice(1).join("\n");
+
+await sendWhatsAppMessage(phone,text);
+
+if(conversations[phone]){
+conversations[phone].iaAtiva=false;
+}
+
+return res.sendStatus(200);
+
+}
+
+}
+
+await notifyAdmin(from,message);
+
 if(!conversations[from]){
 
 conversations[from]={
 history:[],
-nome:null,
 procedimento:null,
 lead:null,
 iaAtiva:true,
@@ -268,15 +254,14 @@ const user=conversations[from];
 
 user.lastInteraction=Date.now();
 
-const name=detectName(message);
-if(name) user.nome=name;
+if(!user.iaAtiva) return res.sendStatus(200);
 
 const procedure=detectProcedure(message);
 if(procedure) user.procedimento=procedure;
 
 user.lead=classifyLead(message);
 
-await salvarLead(user.nome,from,user.procedimento,user.lead);
+await salvarLead("",from,user.procedimento,user.lead);
 
 user.history.push({role:"user",content:message});
 
@@ -300,7 +285,7 @@ res.type("text/xml").send(`<Response><Message>Ocorreu uma instabilidade. Pode en
 
 });
 
-const PORT=process.env.PORT || 8080;
+const PORT=process.env.PORT||8080;
 
 app.listen(PORT,()=>{
 console.log("Servidor rodando");
