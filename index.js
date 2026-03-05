@@ -33,13 +33,11 @@ return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}
 }
 
 function formatDate(date){
-
 return date.toLocaleDateString("pt-BR",{
 weekday:"long",
 day:"numeric",
 month:"long"
 });
-
 }
 
 function nextThreeDates(){
@@ -53,9 +51,7 @@ const dates=[];
 while(dates.length<3){
 
 if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
-
 dates.push(formatDate(new Date(d)));
-
 }
 
 d.setDate(d.getDate()+1);
@@ -63,7 +59,6 @@ d.setDate(d.getDate()+1);
 }
 
 return dates;
-
 }
 
 async function sendWhatsAppMessage(to,text){
@@ -240,23 +235,29 @@ try{
 const from=req.body.From;
 let message=req.body.Body || "";
 
-const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
+const numMedia=parseInt(req.body.NumMedia || 0);
 
 if(!conversations[from]){
-
-conversations[from]={
-history:[]
-};
-
+conversations[from]={history:[]};
 }
 
 const user=conversations[from];
 
-if(hasAudio){
+if(numMedia>0){
 
-const mediaUrl=req.body.MediaUrl0;
+for(let i=0;i<numMedia;i++){
+
+const mediaUrl=req.body["MediaUrl"+i];
 
 await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+
+}
+
+const mediaType=req.body.MediaContentType0;
+
+if(mediaType && mediaType.includes("audio")){
+
+const mediaUrl=req.body.MediaUrl0;
 
 const path=await downloadAudio(mediaUrl);
 
@@ -264,12 +265,17 @@ message=await transcribeAudio(path);
 
 }
 
+}
+
+if(message){
+
 await sendWhatsAppMessage(ADMIN_PHONE,
 `Paciente: ${from}
 
 Mensagem:
-${message}`
-);
+${message}`);
+
+}
 
 user.history.push({role:"user",content:message});
 
@@ -279,7 +285,16 @@ const reply=await aiReply(user.history,dates);
 
 user.history.push({role:"assistant",content:reply});
 
-if(hasAudio){
+await sendWhatsAppMessage(ADMIN_PHONE,
+`Resposta da IA para ${from}:
+
+${reply}`);
+
+if(numMedia>0){
+
+const mediaType=req.body.MediaContentType0;
+
+if(mediaType && mediaType.includes("audio")){
 
 await generateVoice(reply);
 
@@ -292,6 +307,8 @@ return res.type("text/xml").send(`
 </Message>
 </Response>
 `);
+
+}
 
 }
 
