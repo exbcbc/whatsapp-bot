@@ -165,17 +165,17 @@ Você é a assistente da clínica do Dr Henrique Mafra.
 
 Atenda de forma profissional e natural.
 
-Fluxo:
+Fluxo da conversa:
 
 Cumprimente o paciente.
 
 Pergunte qual procedimento ele deseja avaliar.
 
-Explique que é necessária uma avaliação.
+Explique que é necessário uma avaliação.
 
-Ofereça horário:
+Ofereça agendamento:
 
-"O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário?"
+"O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
 
 Se perguntarem valores:
 
@@ -201,58 +201,40 @@ app.post("/whatsapp",async(req,res)=>{
 try{
 
 const from=req.body.From;
-const body=req.body.Body||"";
+let message=req.body.Body||"";
+const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
+
+/* BLOQUEIA mensagens do próprio bot */
 
 if(from===CLINIC_PHONE){
 return res.sendStatus(200);
 }
 
-const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
-
-let message=body;
-
 /* ADMIN */
 
 if(from===ADMIN_PHONE){
 
-const command=message.trim();
-
-// selecionar paciente
-if(command.startsWith("@")){
-
-adminTarget=normalizeNumber(command);
-
-console.log("Paciente selecionado:",adminTarget);
-
+if(message.startsWith("@")){
+adminTarget=normalizeNumber(message);
 return res.sendStatus(200);
-
 }
 
-// reativar IA
-if(command.startsWith("#ia")){
-
-let phone=normalizeNumber(command.replace("#ia",""));
-
-if(conversations[phone]){
-conversations[phone].iaAtiva=true;
-}
-
+if(message.startsWith("#ia")){
+let phone=normalizeNumber(message.replace("#ia",""));
+if(conversations[phone]) conversations[phone].iaAtiva=true;
 return res.sendStatus(200);
-
 }
 
-// enviar mensagem manual
 if(adminTarget){
 
 if(hasAudio){
 
 const mediaUrl=req.body.MediaUrl0;
-
 await sendWhatsAppMedia(adminTarget,mediaUrl);
 
 }else{
 
-await sendWhatsAppMessage(adminTarget,command);
+await sendWhatsAppMessage(adminTarget,message);
 
 }
 
@@ -264,19 +246,12 @@ return res.sendStatus(200);
 
 }
 
-return res.sendStatus(200);
-
 }
 
 /* PACIENTE */
 
 if(!conversations[from]){
-
-conversations[from]={
-history:[],
-iaAtiva:true
-};
-
+conversations[from]={history:[],iaAtiva:true};
 }
 
 const user=conversations[from];
@@ -327,6 +302,8 @@ return res.type("text/xml").send(`
 `);
 
 }
+
+await sendWhatsAppMessage(ADMIN_PHONE,reply);
 
 res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
