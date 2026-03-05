@@ -39,7 +39,6 @@ function nextAvailableDates(){
 
 let dates=[];
 let d=getBrazilDate();
-
 d.setDate(d.getDate()+5);
 
 while(dates.length<3){
@@ -80,6 +79,72 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
+
+}
+
+async function sendWhatsAppMedia(to,media){
+
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+await axios.post(url,new URLSearchParams({
+From:CLINIC_PHONE,
+To:to,
+MediaUrl:media
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+}
+
+async function downloadAudio(url){
+
+const response=await axios({
+url,
+method:"GET",
+responseType:"stream",
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+const path="./audio/input.ogg";
+
+const writer=fs.createWriteStream(path);
+
+response.data.pipe(writer);
+
+return new Promise(resolve=>{
+writer.on("finish",()=>resolve(path));
+});
+
+}
+
+async function transcribeAudio(path){
+
+const transcription=await openai.audio.transcriptions.create({
+file:fs.createReadStream(path),
+model:"gpt-4o-transcribe"
+});
+
+return transcription.text;
+
+}
+
+async function generateVoice(text){
+
+const speech=await openai.audio.speech.create({
+model:"gpt-4o-mini-tts",
+voice:"nova",
+input:text
+});
+
+const buffer=Buffer.from(await speech.arrayBuffer());
+
+fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
@@ -158,6 +223,7 @@ try{
 const from=req.body.From;
 let message=req.body.Body || "";
 
+const numMedia=parseInt(req.body.NumMedia || 0);
 
 if(from===ADMIN_PHONE){
 
@@ -187,7 +253,6 @@ return res.sendStatus(200);
 
 }
 
-
 if(!conversations[from]){
 
 conversations[from]={
@@ -201,8 +266,34 @@ bot:true
 
 const user=conversations[from];
 
+let hasAudio=false;
 
-await sendWhatsAppMessage(ADMIN_PHONE,
+if(numMedia>0){
+
+const mediaUrl=req.body.MediaUrl0;
+const mediaType=req.body.MediaContentType0;
+
+if(mediaType.includes("audio")){
+
+hasAudio=true;
+
+const path=await downloadAudio(mediaUrl);
+
+// envia áudio do paciente para você
+await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+
+message=await transcribeAudio(path);
+
+}else{
+
+await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+
+}
+
+}
+
+await sendWhatsAppMessage(
+ADMIN_PHONE,
 `Paciente #${user.id}
 ${from}
 
@@ -228,6 +319,23 @@ ADMIN_PHONE,
 
 ${reply}`
 );
+
+if(hasAudio){
+
+await generateVoice(reply);
+
+// envia áudio da IA para você
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
+
+return res.type("text/xml").send(`
+<Response>
+<Message>
+<Media>${DOMAIN}/audio/reply.mp3</Media>
+</Message>
+</Response>
+`);
+
+}
 
 res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
