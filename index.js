@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import dotenv from "dotenv";
 import axios from "axios";
 import fs from "fs";
+import FormData from "form-data";
 
 dotenv.config();
 
@@ -10,6 +11,12 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+if (!fs.existsSync("./audio")) {
+fs.mkdirSync("./audio");
+}
+
+app.use("/audio", express.static("./audio"));
 
 const openai = new OpenAI({
 apiKey: process.env.OPENAI_API_KEY
@@ -21,9 +28,9 @@ const CHATWOOT_URL="https://drhm.up.railway.app";
 const CHATWOOT_ACCOUNT_ID="2";
 const CHATWOOT_TOKEN="K4iNRKnchfhA2TcmQC1itzzb";
 
-/* MEMORIA DE CONVERSAS */
-
 const conversations={};
+
+/* DATA BRASIL */
 
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
@@ -40,7 +47,6 @@ d.setDate(d.getDate()+1);
 }
 
 return d;
-
 }
 
 function formatDate(date){
@@ -53,23 +59,101 @@ month:"long"
 
 }
 
-/* DETECTAR PROCEDIMENTO */
+/* DOWNLOAD AUDIO CHATWOOT */
 
-function detectProcedure(msg){
+async function downloadAudio(url){
 
-const t=msg.toLowerCase();
+const response=await axios({
+url,
+method:"GET",
+responseType:"stream"
+});
 
-if(t.includes("botox")) return "botox";
-if(t.includes("preenchimento")) return "preenchimento";
-if(t.includes("papada")) return "lipo papada";
-if(t.includes("melasma")) return "melasma";
-if(t.includes("flacidez")) return "bioestimulador";
+const path="./audio/input.ogg";
 
-return "";
+const writer=fs.createWriteStream(path);
+
+response.data.pipe(writer);
+
+return new Promise(resolve=>{
+writer.on("finish",()=>resolve(path));
+});
 
 }
 
-/* FOLLOW UP AUTOMÁTICO */
+/* TRANSCRIÇÃO */
+
+async function transcribeAudio(path){
+
+const transcription=await openai.audio.transcriptions.create({
+file:fs.createReadStream(path),
+model:"gpt-4o-transcribe"
+});
+
+return transcription.text;
+
+}
+
+/* GERAR VOZ */
+
+async function generateVoice(text){
+
+const speech=await openai.audio.speech.create({
+model:"gpt-4o-mini-tts",
+voice:"nova",
+input:text
+});
+
+const buffer=Buffer.from(await speech.arrayBuffer());
+
+fs.writeFileSync("./audio/reply.mp3",buffer);
+
+return "./audio/reply.mp3";
+
+}
+
+/* ENVIAR TEXTO CHATWOOT */
+
+async function sendChatwootText(conversationId,text){
+
+await axios.post(
+`${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/messages`,
+{
+content:text,
+message_type:"outgoing"
+},
+{
+headers:{
+api_access_token:CHATWOOT_TOKEN
+}
+}
+);
+
+}
+
+/* ENVIAR AUDIO CHATWOOT */
+
+async function sendChatwootAudio(conversationId,filePath){
+
+const form=new FormData();
+
+form.append("message_type","outgoing");
+form.append("attachments[]",fs.createReadStream(filePath));
+
+await axios.post(
+`${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/messages`,
+form,
+{
+headers:{
+api_access_token:CHATWOOT_TOKEN,
+...form.getHeaders()
+}
+}
+);
+
+}
+
+/* FOLLOW UP */
 
 function scheduleFollowUps(user,conversationId){
 
@@ -78,11 +162,11 @@ const interaction=user.lastInteraction;
 
 setTimeout(async()=>{
 
-if(!conversations[conversationId]) return;
+if(!conversations[conversationId])return;
 
-if(conversations[conversationId].lastInteraction!==interaction) return;
+if(conversations[conversationId].lastInteraction!==interaction)return;
 
-await sendChatwootMessage(conversationId,
+await sendChatwootText(conversationId,
 `Vi que você estava vendo sobre procedimentos estéticos.
 
 Ainda tenho avaliação disponível ${nextDateText} às 19h30.
@@ -147,43 +231,42 @@ return completion.choices[0].message.content;
 
 }
 
-/* ENVIAR MENSAGEM PARA CHATWOOT */
-
-async function sendChatwootMessage(conversationId,text){
-
-await axios.post(
-`${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/messages`,
-{
-content:text,
-message_type:"outgoing"
-},
-{
-headers:{
-api_access_token:CHATWOOT_TOKEN
-}
-}
-);
-
-}
-
 /* ROTA CHATWOOT */
 
 app.post("/chatwoot",async(req,res)=>{
 
 try{
 
-const message=req.body.content || "";
 const conversationId=req.body.conversation?.id;
 
-if(!message || !conversationId){
+if(!conversationId){
 return res.sendStatus(200);
 }
+
+let message=req.body.content || "";
+
+let isAudio=false;
+
+/* DETECTAR AUDIO */
+
+if(!message && req.body.attachments?.length>0){
+
+isAudio=true;
+
+const audioUrl=req.body.attachments[0].data_url;
+
+const path=await downloadAudio(audioUrl);
+
+message=await transcribeAudio(path);
+
+}
+
+/* CRIAR CONVERSA */
 
 if(!conversations[conversationId]){
 
 conversations[conversationId]={
 history:[],
-procedimento:"",
 lastInteraction:Date.now()
 };
 
@@ -192,6 +275,8 @@ lastInteraction:Date.now()
 const user=conversations[conversationId];
 
 user.lastInteraction=Date.now();
+
+/* HISTORICO */
 
 user.history.push({
 role:"user",
@@ -207,7 +292,19 @@ role:"assistant",
 content:reply
 });
 
-await sendChatwootMessage(conversationId,reply);
+/* SE FOI AUDIO */
+
+if(isAudio){
+
+const voice=await generateVoice(reply);
+
+await sendChatwootAudio(conversationId,voice);
+
+}else{
+
+await sendChatwootText(conversationId,reply);
+
+}
 
 scheduleFollowUps(user,conversationId);
 
