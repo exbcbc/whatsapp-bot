@@ -100,8 +100,7 @@ t.includes("horário")
 
 if(
 t.includes("valor") ||
-t.includes("preço") ||
-t.includes("quanto custa")
+t.includes("preço")
 ) return "frio";
 
 return "morno";
@@ -143,9 +142,9 @@ if(!conversations[phone]) return;
 if(conversations[phone].lastInteraction !== interactionTime) return;
 
 sendWhatsAppMessage(phone,
-`Vi que você estava vendo sobre o procedimento.
+`Vi que você estava vendo sobre procedimentos estéticos.
 
-O próximo horário disponível é ${nextDateText} às 19h30.
+Caso queira, ainda tenho avaliação disponível ${nextDateText} às 19h30.
 
 Posso reservar esse horário para você?`
 );
@@ -161,26 +160,12 @@ if(conversations[phone].lastInteraction !== interactionTime) return;
 sendWhatsAppMessage(phone,
 `A agenda do Dr Henrique Mafra costuma ficar concorrida.
 
-Ainda tenho disponível ${nextDateText} às 19h30.
+Ainda tenho disponível ${nextDateText} às 19h30 para avaliação.
 
 Posso garantir esse horário para você?`
 );
 
 },60*60*1000);
-
-setTimeout(()=>{
-
-if(!conversations[phone]) return;
-
-if(conversations[phone].lastInteraction !== interactionTime) return;
-
-sendWhatsAppMessage(phone,
-`Alguns horários desta semana já foram preenchidos.
-
-Se quiser, posso garantir ${nextDateText} às 19h30 para sua avaliação.`
-);
-
-},3*60*60*1000);
 
 }
 
@@ -198,11 +183,22 @@ content:`
 
 Você é a assistente da clínica do Dr Henrique Mafra.
 
-Objetivo: converter o paciente para consulta.
+Atenda de forma profissional e natural.
 
-Sempre oferecer primeiro o próximo dia disponível às 19h30.
+Fluxo da conversa:
 
-Formato:
+1 Cumprimente o paciente.
+
+2 Pergunte qual procedimento ou tratamento ele tem interesse.
+
+Exemplo:
+"Qual procedimento você gostaria de realizar ou avaliar?"
+
+3 Após entender o interesse, explique que é necessário uma avaliação.
+
+4 Então ofereça agendamento.
+
+Formato do agendamento:
 
 "O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
 
@@ -210,11 +206,9 @@ Se perguntarem valores:
 
 Explique que cada caso precisa de avaliação.
 
-"A consulta de avaliação tem valor de R$150. Caso realize o procedimento esse valor é abatido."
+"A consulta de avaliação tem o valor de R$150. Caso realize o procedimento, esse valor é abatido."
 
-Se o paciente disser que não pode no horário, tente oferecer outra data.
-
-Sempre conduza para agendamento.
+Nunca parecer insistente.
 
 Nunca usar emojis.
 
