@@ -44,7 +44,6 @@ return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}
 function nextAvailableDates(){
 
 let dates=[];
-
 let d=getBrazilDate();
 
 d.setDate(d.getDate()+5);
@@ -69,46 +68,44 @@ month:"long"
 });
 }
 
-async function sendWhatsAppMessage(to,text=null){
+async function sendWhatsAppMessage(to,text){
 
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
-let data={
+await axios.post(url,new URLSearchParams({
 From:CLINIC_PHONE,
-To:to
-};
-
-if(text){
-data.Body=text;
-}
-
-await axios.post(url,new URLSearchParams(data),{
+To:to,
+Body:text
+}),{
 auth:{
 username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
+
 }
 
 async function sendWhatsAppMedia(to,media){
 
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
-let data={
+await axios.post(url,new URLSearchParams({
 From:CLINIC_PHONE,
 To:to,
 MediaUrl:media
-};
-
-await axios.post(url,new URLSearchParams(data),{
+}),{
 auth:{
 username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
+
 }
 
 async function downloadAudio(url){
+
+const fileName=`input_${Date.now()}.ogg`;
+const path=`./audio/${fileName}`;
 
 const response=await axios({
 url,
@@ -120,21 +117,19 @@ password:process.env.TWILIO_AUTH_TOKEN
 }
 });
 
-const path=`./audio/input_${Date.now()}.ogg`;
-
 const writer=fs.createWriteStream(path);
-
 response.data.pipe(writer);
 
 return new Promise(resolve=>{
-writer.on("finish",()=>resolve(path));
+writer.on("finish",()=>resolve(`${DOMAIN}/audio/${fileName}`));
 });
+
 }
 
 async function transcribeAudio(path){
 
 const transcription=await openai.audio.transcriptions.create({
-file:fs.createReadStream(path),
+file:fs.createReadStream(path.replace(`${DOMAIN}/audio/`,`./audio/`)),
 model:"gpt-4o-transcribe"
 });
 
@@ -184,21 +179,15 @@ messages:[
 {
 role:"system",
 content:`
-
-Seu nome é IAra você é assistente virtual do Dr Henrique Mafra especialista em estética avançada.
-
-Seu objetivo é atender pacientes de forma natural educada e humanizada e conduzir a conversa até o agendamento da consulta.
+Seu nome é IAra assistente virtual do Dr Henrique Mafra.
 
 Fluxo:
 
-1 Cumprimente o paciente.
-
-2 Pergunte qual procedimento deseja.
-
-3 Explique brevemente o procedimento.
+Cumprimente o paciente.
+Pergunte procedimento.
+Explique brevemente.
 
 Procedimentos:
-
 Botox
 Preenchimento facial
 Bioestimuladores
@@ -208,35 +197,25 @@ Lipo de papada
 Remoção de verrugas
 Remoção de tatuagem
 
-4 Convide para Instagram
+Convide para Instagram:
 ${INSTAGRAM}
 
-5 Explique consulta de avaliação.
+Consulta avaliação: R$150 abatido.
 
-Valor da avaliação: R$150 abatido no procedimento.
-
-7 Ofereça horários:
+Horários:
 
 ${formatDate(dates[0])} às 19h30
 ${formatDate(dates[1])} às 19h30
 ${formatDate(dates[2])} às 19h30
 
-Quando confirmar:
-
-Perfeito vou reservar.
-
-Dr Henrique confirmará pelo telefone:
-
+Telefone Dr Henrique:
 ${DOCTOR_PHONE}
 
 Endereço:
-
 ${CLINIC_ADDRESS}
 
 Nunca usar emojis.
 Respostas curtas.
-Sempre conduzir para agendamento.
-
 `
 },
 ...history
@@ -249,13 +228,10 @@ return completion.choices[0].message.content;
 
 app.post("/whatsapp",async(req,res)=>{
 
-res.sendStatus(200);
-
 try{
 
 const from=req.body.From;
 let message=req.body.Body || "";
-
 const numMedia=parseInt(req.body.NumMedia || 0);
 
 if(!conversations[from]){
@@ -281,11 +257,11 @@ if(mediaType.includes("audio")){
 
 hasAudio=true;
 
-const path=await downloadAudio(mediaUrl);
+const localAudio=await downloadAudio(mediaUrl);
 
-message=await transcribeAudio(path);
+await sendWhatsAppMedia(ADMIN_PHONE,localAudio);
 
-await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+message=await transcribeAudio(localAudio);
 
 }else{
 
@@ -294,26 +270,24 @@ await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
 }
 }
 
-if(isExistingPatient(message)){
-
-const reply=`
-Perfeito vou avisar o Dr Henrique Mafra.
-
-Ele continuará o atendimento diretamente pelo número particular dele.
-
-Telefone:
-${DOCTOR_PHONE}
-`;
-
-await sendWhatsAppMessage(from,reply);
-
-return;
-}
-
 await sendWhatsAppMessage(ADMIN_PHONE,`Paciente: ${from}
 
 Mensagem:
 ${message}`);
+
+if(isExistingPatient(message)){
+
+await sendWhatsAppMessage(from,`
+Perfeito vou avisar o Dr Henrique Mafra.
+
+Telefone:
+${DOCTOR_PHONE}
+`);
+
+res.sendStatus(200);
+return;
+
+}
 
 user.history.push({role:"user",content:message});
 
@@ -335,11 +309,13 @@ await sendWhatsAppMessage(from,reply);
 
 }
 
+res.sendStatus(200);
+
 }catch(err){
 
 console.log(err);
 
-await sendWhatsAppMessage(ADMIN_PHONE,"Erro no servidor");
+res.sendStatus(200);
 
 }
 
