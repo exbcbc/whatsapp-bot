@@ -52,20 +52,6 @@ month:"long"
 
 }
 
-function detectProcedure(msg){
-
-const t=msg.toLowerCase();
-
-if(t.includes("botox")) return "botox";
-if(t.includes("preenchimento")) return "preenchimento";
-if(t.includes("papada")) return "lipo papada";
-if(t.includes("melasma")) return "melasma";
-if(t.includes("flacidez")) return "bioestimulador";
-
-return "";
-
-}
-
 async function sendWhatsAppMessage(to,text){
 
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
@@ -161,11 +147,11 @@ if(!conversations[phone])return;
 if(conversations[phone].lastInteraction!==interaction)return;
 
 sendWhatsAppMessage(phone,
-`Vi que vocÃª estava vendo sobre procedimentos estÃ©ticos.
+`Vi que você estava vendo sobre procedimentos estéticos.
 
-Ainda tenho avaliaÃ§Ã£o disponÃ­vel ${nextDateText} Ã s 19h30.
+Ainda tenho avaliação disponível ${nextDateText} às 19h30.
 
-Posso reservar esse horÃ¡rio para vocÃª?`
+Posso reservar esse horário para você?`
 );
 
 },10*60*1000);
@@ -183,7 +169,7 @@ messages:[
 role:"system",
 content:`
 
-VocÃª Ã© a assistente da clÃ­nica do Dr Henrique Mafra.
+Você é a assistente da clínica do Dr Henrique Mafra.
 
 Atenda de forma profissional e natural.
 
@@ -194,19 +180,19 @@ Fluxo da conversa:
 2 Pergunte qual procedimento ele deseja avaliar.
 
 Exemplo:
-"Qual procedimento vocÃª gostaria de avaliar?"
+"Qual procedimento você gostaria de avaliar?"
 
-3 Explique que Ã© necessÃ¡rio avaliaÃ§Ã£o.
+3 Explique que é necessário avaliação.
 
-4 OfereÃ§a agendamento.
+4 Ofereça agendamento.
 
 Formato:
 
-"O prÃ³ximo dia disponÃ­vel Ã© ${nextDateText} Ã s 19h30. Posso reservar esse horÃ¡rio para vocÃª?"
+"O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
 
 Se perguntarem valores:
 
-"A consulta de avaliaÃ§Ã£o tem valor de R$150 e caso realize o procedimento esse valor Ã© abatido."
+"A consulta de avaliação tem valor de R$150 e caso realize o procedimento esse valor é abatido."
 
 Nunca usar emojis.
 
@@ -232,63 +218,10 @@ let message=req.body.Body || "";
 
 const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
 
-if(from===ADMIN_PHONE){
-
-if(message.startsWith("@")){
-
-adminTarget="whatsapp:+"+message.replace("@","").trim();
-
-await sendWhatsAppMessage(ADMIN_PHONE,"Paciente selecionado");
-
-return res.sendStatus(200);
-
-}
-
-if(message.startsWith("#ia")){
-
-const phone="whatsapp:+"+message.replace("#ia","").trim();
-
-if(conversations[phone]){
-conversations[phone].iaAtiva=true;
-}
-
-await sendWhatsAppMessage(ADMIN_PHONE,"IA reativada");
-
-return res.sendStatus(200);
-
-}
-
-if(adminTarget){
-
-if(hasAudio){
-
-const mediaUrl=req.body.MediaUrl0;
-
-const path=await downloadAudio(mediaUrl);
-
-await sendWhatsAppMedia(adminTarget,`${DOMAIN}/audio/input.ogg`);
-
-}else{
-
-await sendWhatsAppMessage(adminTarget,message);
-
-}
-
-if(conversations[adminTarget]){
-conversations[adminTarget].iaAtiva=false;
-}
-
-return res.sendStatus(200);
-
-}
-
-}
-
 if(!conversations[from]){
 
 conversations[from]={
 history:[],
-procedimento:"",
 iaAtiva:true,
 lastInteraction:Date.now()
 };
@@ -305,18 +238,9 @@ const mediaUrl=req.body.MediaUrl0;
 
 const path=await downloadAudio(mediaUrl);
 
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
-
 message=await transcribeAudio(path);
 
 }
-
-await sendWhatsAppMessage(ADMIN_PHONE,
-`Paciente: ${from}
-
-Mensagem:
-${message}`
-);
 
 if(!user.iaAtiva)return res.sendStatus(200);
 
@@ -333,8 +257,6 @@ scheduleFollowUps(user,from);
 if(hasAudio){
 
 await generateVoice(reply);
-
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
 
 return res.type("text/xml").send(`
 <Response>
@@ -353,6 +275,37 @@ res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 console.log(err);
 
 res.type("text/xml").send(`<Response><Message>Erro no servidor.</Message></Response>`);
+
+}
+
+});
+
+/* ROTA PARA CHATWOOT */
+
+app.post("/chatwoot",async(req,res)=>{
+
+try{
+
+const message=req.body.message;
+
+if(!message){
+return res.sendStatus(200);
+}
+
+const nextDateText=formatDate(nextAvailableDate());
+
+const reply=await aiReply([
+{role:"user",content:message}
+],nextDateText);
+
+res.json({
+content:reply
+});
+
+}catch(err){
+
+console.log(err);
+res.sendStatus(500);
 
 }
 
