@@ -10,37 +10,20 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
-/* AUDIO */
-
-if (!fs.existsSync("./audio")) {
-fs.mkdirSync("./audio");
-}
-
 app.use("/audio", express.static("./audio"));
-
-/* OPENAI */
 
 const openai = new OpenAI({
 apiKey: process.env.OPENAI_API_KEY
 });
 
-/* TWILIO */
-
 const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
-/* CHATWOOT */
-
-const CHATWOOT_URL="https://drhm.up.railway.app";
-const ACCOUNT_ID="2";
-const INBOX_ID="1";
-const TOKEN="K4iNRKnchfhA2TcmQC1itzzb";
-
-/* MEMORIA */
+const CLINIC_PHONE="whatsapp:+554731700136";
+const ADMIN_PHONE="whatsapp:+5547991812557";
 
 const conversations={};
 
-/* DATA */
+let adminTarget=null;
 
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
@@ -69,7 +52,53 @@ month:"long"
 
 }
 
-/* DOWNLOAD AUDIO */
+function detectProcedure(msg){
+
+const t=msg.toLowerCase();
+
+if(t.includes("botox")) return "botox";
+if(t.includes("preenchimento")) return "preenchimento";
+if(t.includes("papada")) return "lipo papada";
+if(t.includes("melasma")) return "melasma";
+if(t.includes("flacidez")) return "bioestimulador";
+
+return "";
+
+}
+
+async function sendWhatsAppMessage(to,text){
+
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+await axios.post(url,new URLSearchParams({
+From:CLINIC_PHONE,
+To:to,
+Body:text
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+}
+
+async function sendWhatsAppMedia(to,media){
+
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+await axios.post(url,new URLSearchParams({
+From:CLINIC_PHONE,
+To:to,
+MediaUrl:media
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+}
 
 async function downloadAudio(url){
 
@@ -95,8 +124,6 @@ writer.on("finish",()=>resolve(path));
 
 }
 
-/* TRANSCRIÇÃO */
-
 async function transcribeAudio(path){
 
 const transcription=await openai.audio.transcriptions.create({
@@ -108,8 +135,6 @@ return transcription.text;
 
 }
 
-/* GERAR VOZ */
-
 async function generateVoice(text){
 
 const speech=await openai.audio.speech.create({
@@ -120,87 +145,32 @@ input:text
 
 const buffer=Buffer.from(await speech.arrayBuffer());
 
-const path="./audio/reply.mp3";
-
-fs.writeFileSync(path,buffer);
-
-return path;
+fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
-/* CHATWOOT */
+function scheduleFollowUps(user,phone){
 
-/* criar ou buscar contato */
+const nextDateText=formatDate(nextAvailableDate());
+const interaction=user.lastInteraction;
 
-async function getContact(phone){
+setTimeout(()=>{
 
-try{
+if(!conversations[phone])return;
 
-const res=await axios.get(
-`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/contacts/search?q=${phone}`,
-{
-headers:{api_access_token:TOKEN}
-}
+if(conversations[phone].lastInteraction!==interaction)return;
+
+sendWhatsAppMessage(phone,
+`Vi que vocÃª estava vendo sobre procedimentos estÃ©ticos.
+
+Ainda tenho avaliaÃ§Ã£o disponÃ­vel ${nextDateText} Ã s 19h30.
+
+Posso reservar esse horÃ¡rio para vocÃª?`
 );
 
-if(res.data.payload.length>0){
-return res.data.payload[0].id;
-}
-
-}catch(e){}
-
-const create=await axios.post(
-`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/contacts`,
-{
-phone_number:phone
-},
-{
-headers:{api_access_token:TOKEN}
-}
-);
-
-return create.data.payload.contact.id;
+},10*60*1000);
 
 }
-
-/* criar conversa */
-
-async function createConversation(contactId){
-
-const res=await axios.post(
-`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/conversations`,
-{
-source_id:`${contactId}`,
-inbox_id:INBOX_ID,
-contact_id:contactId
-},
-{
-headers:{api_access_token:TOKEN}
-}
-);
-
-return res.data.id;
-
-}
-
-/* enviar mensagem */
-
-async function sendChatwootMessage(conversationId,text){
-
-await axios.post(
-`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/conversations/${conversationId}/messages`,
-{
-content:text,
-message_type:"incoming"
-},
-{
-headers:{api_access_token:TOKEN}
-}
-);
-
-}
-
-/* IA */
 
 async function aiReply(history,nextDateText){
 
@@ -213,7 +183,7 @@ messages:[
 role:"system",
 content:`
 
-Você é a assistente da clínica do Dr Henrique Mafra.
+VocÃª Ã© a assistente da clÃ­nica do Dr Henrique Mafra.
 
 Atenda de forma profissional e natural.
 
@@ -221,17 +191,22 @@ Fluxo da conversa:
 
 1 Cumprimente o paciente.
 
-2 Pergunte qual procedimento deseja avaliar.
+2 Pergunte qual procedimento ele deseja avaliar.
 
-3 Explique que é necessária avaliação.
+Exemplo:
+"Qual procedimento vocÃª gostaria de avaliar?"
 
-4 Ofereça horário.
+3 Explique que Ã© necessÃ¡rio avaliaÃ§Ã£o.
 
-"O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário?"
+4 OfereÃ§a agendamento.
 
-Valor:
+Formato:
 
-"A consulta custa R$150 e é abatida se realizar o procedimento."
+"O prÃ³ximo dia disponÃ­vel Ã© ${nextDateText} Ã s 19h30. Posso reservar esse horÃ¡rio para vocÃª?"
+
+Se perguntarem valores:
+
+"A consulta de avaliaÃ§Ã£o tem valor de R$150 e caso realize o procedimento esse valor Ã© abatido."
 
 Nunca usar emojis.
 
@@ -248,80 +223,118 @@ return completion.choices[0].message.content;
 
 }
 
-/* WEBHOOK TWILIO */
-
 app.post("/whatsapp",async(req,res)=>{
 
 try{
 
 const from=req.body.From;
-
 let message=req.body.Body || "";
 
-const numMedia=parseInt(req.body.NumMedia||0);
+const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
 
-let isAudio=false;
+if(from===ADMIN_PHONE){
 
-/* AUDIO */
+if(message.startsWith("@")){
 
-if(numMedia>0){
+adminTarget="whatsapp:+"+message.replace("@","").trim();
 
-const mediaUrl=req.body.MediaUrl0;
+await sendWhatsAppMessage(ADMIN_PHONE,"Paciente selecionado");
 
-isAudio=true;
-
-const path=await downloadAudio(mediaUrl);
-
-message=await transcribeAudio(path);
+return res.sendStatus(200);
 
 }
 
-/* MEMORIA */
+if(message.startsWith("#ia")){
+
+const phone="whatsapp:+"+message.replace("#ia","").trim();
+
+if(conversations[phone]){
+conversations[phone].iaAtiva=true;
+}
+
+await sendWhatsAppMessage(ADMIN_PHONE,"IA reativada");
+
+return res.sendStatus(200);
+
+}
+
+if(adminTarget){
+
+if(hasAudio){
+
+const mediaUrl=req.body.MediaUrl0;
+
+const path=await downloadAudio(mediaUrl);
+
+await sendWhatsAppMedia(adminTarget,`${DOMAIN}/audio/input.ogg`);
+
+}else{
+
+await sendWhatsAppMessage(adminTarget,message);
+
+}
+
+if(conversations[adminTarget]){
+conversations[adminTarget].iaAtiva=false;
+}
+
+return res.sendStatus(200);
+
+}
+
+}
 
 if(!conversations[from]){
 
-const contactId=await getContact(from);
-
-const conversationId=await createConversation(contactId);
-
 conversations[from]={
 history:[],
-conversationId
+procedimento:"",
+iaAtiva:true,
+lastInteraction:Date.now()
 };
 
 }
 
 const user=conversations[from];
 
-user.history.push({
-role:"user",
-content:message
-});
+user.lastInteraction=Date.now();
 
-/* ENVIAR PARA CHATWOOT */
+if(hasAudio){
 
-await sendChatwootMessage(user.conversationId,message);
+const mediaUrl=req.body.MediaUrl0;
 
-/* IA */
+const path=await downloadAudio(mediaUrl);
+
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
+
+message=await transcribeAudio(path);
+
+}
+
+await sendWhatsAppMessage(ADMIN_PHONE,
+`Paciente: ${from}
+
+Mensagem:
+${message}`
+);
+
+if(!user.iaAtiva)return res.sendStatus(200);
+
+user.history.push({role:"user",content:message});
 
 const nextDateText=formatDate(nextAvailableDate());
 
 const reply=await aiReply(user.history,nextDateText);
 
-user.history.push({
-role:"assistant",
-content:reply
-});
+user.history.push({role:"assistant",content:reply});
 
-/* CHATWOOT IA */
+scheduleFollowUps(user,from);
 
-await sendChatwootMessage(user.conversationId,reply);
-
-/* AUDIO */
-
-if(isAudio){
+if(hasAudio){
 
 await generateVoice(reply);
+
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
 
 return res.type("text/xml").send(`
 <Response>
@@ -333,29 +346,17 @@ return res.type("text/xml").send(`
 
 }
 
-/* TEXTO */
-
-res.type("text/xml").send(`
-<Response>
-<Message>${reply}</Message>
-</Response>
-`);
+res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
 }catch(err){
 
 console.log(err);
 
-res.type("text/xml").send(`
-<Response>
-<Message>Erro no servidor.</Message>
-</Response>
-`);
+res.type("text/xml").send(`<Response><Message>Erro no servidor.</Message></Response>`);
 
 }
 
 });
-
-/* SERVER */
 
 const PORT=process.env.PORT||8080;
 
