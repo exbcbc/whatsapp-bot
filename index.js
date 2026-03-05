@@ -3,10 +3,12 @@ import OpenAI from "openai";
 import dotenv from "dotenv";
 import axios from "axios";
 import fs from "fs";
+import path from "path";
 
 dotenv.config();
 
 const app = express();
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -27,42 +29,35 @@ const ADMIN_PHONE="whatsapp:+5547991812557";
 
 const conversations={};
 
-function generateID(){
-return Math.floor(1000+Math.random()*9000).toString();
-}
-
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
-function nextAvailableDates(){
-
-let dates=[];
-let d=getBrazilDate();
-d.setDate(d.getDate()+5);
-
-while(dates.length<3){
-
-if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
-dates.push(new Date(d));
-}
-
-d.setDate(d.getDate()+1);
-
-}
-
-return dates;
-
-}
-
 function formatDate(date){
-
 return date.toLocaleDateString("pt-BR",{
 weekday:"long",
 day:"numeric",
 month:"long"
 });
+}
 
+function nextThreeDates(){
+
+let d=getBrazilDate();
+d.setDate(d.getDate()+5);
+
+const dates=[];
+
+while(dates.length<3){
+
+if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
+dates.push(formatDate(new Date(d)));
+}
+
+d.setDate(d.getDate()+1);
+}
+
+return dates;
 }
 
 async function sendWhatsAppMessage(to,text){
@@ -99,6 +94,31 @@ password:process.env.TWILIO_AUTH_TOKEN
 
 }
 
+async function downloadTwilioMedia(mediaUrl,i){
+
+const response=await axios({
+url:mediaUrl,
+method:"GET",
+responseType:"stream",
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+const fileName=`media_${Date.now()}_${i}`;
+const filePath=`./audio/${fileName}.bin`;
+
+const writer=fs.createWriteStream(filePath);
+
+response.data.pipe(writer);
+
+await new Promise(resolve=>writer.on("finish",resolve));
+
+return `${DOMAIN}/audio/${fileName}.bin`;
+
+}
+
 async function downloadAudio(url){
 
 const response=await axios({
@@ -111,22 +131,22 @@ password:process.env.TWILIO_AUTH_TOKEN
 }
 });
 
-const path="./audio/input.ogg";
+const pathFile="./audio/input.ogg";
 
-const writer=fs.createWriteStream(path);
+const writer=fs.createWriteStream(pathFile);
 
 response.data.pipe(writer);
 
 return new Promise(resolve=>{
-writer.on("finish",()=>resolve(path));
+writer.on("finish",()=>resolve(pathFile));
 });
 
 }
 
-async function transcribeAudio(path){
+async function transcribeAudio(pathFile){
 
 const transcription=await openai.audio.transcriptions.create({
-file:fs.createReadStream(path),
+file:fs.createReadStream(pathFile),
 model:"gpt-4o-transcribe"
 });
 
@@ -148,9 +168,7 @@ fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
-async function aiReply(history){
-
-const dates=nextAvailableDates();
+async function aiReply(history,dates){
 
 const completion=await openai.chat.completions.create({
 
@@ -175,15 +193,11 @@ Fluxo da conversa:
 
 4 Ofereça agendamento.
 
-Regra obrigatória:
-
-Nunca oferecer datas com menos de 5 dias de antecedência.
-
 Horários disponíveis para avaliação:
 
-${formatDate(dates[0])} às 19h30
-${formatDate(dates[1])} às 19h30
-${formatDate(dates[2])} às 19h30
+${dates[0]} às 19h30  
+${dates[1]} às 19h30  
+${dates[2]} às 19h30  
 
 Sempre oferecer primeiro o primeiro horário.
 
@@ -192,6 +206,8 @@ Priorizar sempre 19h30.
 Se o paciente disser que não pode à noite:
 
 ofereça horário alternativo entre 14h e 18h.
+
+Nunca sugerir horários antes de ${dates[0]}.
 
 Se confirmar agendamento:
 
@@ -225,106 +241,71 @@ let message=req.body.Body || "";
 
 const numMedia=parseInt(req.body.NumMedia || 0);
 
-if(from===ADMIN_PHONE){
-
-const match=message.match(/#(\d+)/);
-
-if(!match) return res.sendStatus(200);
-
-const id=match[1];
-
-const convo=Object.values(conversations).find(c=>c.id===id);
-
-if(!convo) return res.sendStatus(200);
-
-if(message.includes("/bot")){
-convo.bot=true;
-await sendWhatsAppMessage(ADMIN_PHONE,`Bot reativado para #${id}`);
-return res.sendStatus(200);
-}
-
-convo.bot=false;
-
-const cleanMessage=message.replace(`#${id}`,"").trim();
-
-await sendWhatsAppMessage(convo.phone,cleanMessage);
-
-return res.sendStatus(200);
-
-}
-
 if(!conversations[from]){
-
-conversations[from]={
-id:generateID(),
-phone:from,
-history:[],
-bot:true
-};
-
+conversations[from]={history:[]};
 }
 
 const user=conversations[from];
 
-let hasAudio=false;
+let audioReceived=false;
 
 if(numMedia>0){
 
-const mediaUrl=req.body.MediaUrl0;
-const mediaType=req.body.MediaContentType0;
+for(let i=0;i<numMedia;i++){
 
-if(mediaType.includes("audio")){
+const mediaUrl=req.body["MediaUrl"+i];
 
-hasAudio=true;
+const mediaType=req.body["MediaContentType"+i];
 
-const path=await downloadAudio(mediaUrl);
+const publicUrl=await downloadTwilioMedia(mediaUrl,i);
 
-// envia áudio do paciente para você
-await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+await sendWhatsAppMedia(ADMIN_PHONE,publicUrl);
 
-message=await transcribeAudio(path);
+if(mediaType && mediaType.includes("audio")){
+audioReceived=true;
+}
 
-}else{
+}
 
-await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+if(audioReceived){
+
+const audioUrl=req.body.MediaUrl0;
+
+const audioPath=await downloadAudio(audioUrl);
+
+message=await transcribeAudio(audioPath);
 
 }
 
 }
 
-await sendWhatsAppMessage(
-ADMIN_PHONE,
-`Paciente #${user.id}
-${from}
+if(message){
+
+await sendWhatsAppMessage(ADMIN_PHONE,
+`Paciente: ${from}
 
 Mensagem:
-${message}`
-);
-
-if(!user.bot){
-
-return res.sendStatus(200);
+${message}`);
 
 }
 
 user.history.push({role:"user",content:message});
 
-const reply=await aiReply(user.history);
+const dates=nextThreeDates();
+
+const reply=await aiReply(user.history,dates);
 
 user.history.push({role:"assistant",content:reply});
 
-await sendWhatsAppMessage(
-ADMIN_PHONE,
-`Resposta IA #${user.id}
+await sendWhatsAppMessage(ADMIN_PHONE,
+`Resposta IA para ${from}:
 
-${reply}`
-);
+${reply}`);
 
-if(hasAudio){
+if(audioReceived){
 
 await generateVoice(reply);
 
-// envia áudio da IA para você
 await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
 
 return res.type("text/xml").send(`
