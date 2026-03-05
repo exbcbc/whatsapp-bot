@@ -275,6 +275,16 @@ const reply=await aiReply(user.history);
 
 user.history.push({role:"assistant",content:reply});
 
+
+// ✅ ENVIA A RESPOSTA DA IA PARA VOCÊ
+await sendWhatsAppMessage(
+ADMIN_PHONE,
+`Resposta da IA para ${from}:
+
+${reply}`
+);
+
+
 if(hasAudio){
 
 await generateVoice(reply);
