@@ -95,8 +95,7 @@ const t=msg.toLowerCase();
 if(
 t.includes("agendar") ||
 t.includes("marcar") ||
-t.includes("horário") ||
-t.includes("disponibilidade")
+t.includes("horário")
 ) return "quente";
 
 if(
@@ -132,79 +131,16 @@ console.log("Erro salvar lead");
 
 }
 
-async function downloadAudio(url){
-
-const response=await axios({
-url,
-method:"GET",
-responseType:"stream",
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-const path="./audio/input.ogg";
-
-const writer=fs.createWriteStream(path);
-
-response.data.pipe(writer);
-
-return new Promise(resolve=>{
-writer.on("finish",()=>resolve(path));
-});
-
-}
-
-async function transcribeAudio(path){
-
-const transcription=await openai.audio.transcriptions.create({
-file:fs.createReadStream(path),
-model:"gpt-4o-transcribe"
-});
-
-return transcription.text;
-
-}
-
-async function generateVoice(text){
-
-const speech=await openai.audio.speech.create({
-model:"gpt-4o-mini-tts",
-voice:"nova",
-input:text
-});
-
-const buffer=Buffer.from(await speech.arrayBuffer());
-
-fs.writeFileSync("./audio/reply.mp3",buffer);
-
-}
-
-async function sendWhatsAppMessage(to,text){
-
-const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
-
-await axios.post(url,new URLSearchParams({
-From:"whatsapp:+14155238886",
-To:to,
-Body:text
-}),{
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-}
-
 function scheduleFollowUps(user,phone){
 
 const nextDateText=formatDate(nextAvailableDate());
+const interactionTime=user.lastInteraction;
 
 setTimeout(()=>{
 
 if(!conversations[phone]) return;
+
+if(conversations[phone].lastInteraction !== interactionTime) return;
 
 sendWhatsAppMessage(phone,
 `Vi que você estava vendo sobre o procedimento.
@@ -216,10 +152,11 @@ Posso reservar esse horário para você?`
 
 },10*60*1000);
 
-
 setTimeout(()=>{
 
 if(!conversations[phone]) return;
+
+if(conversations[phone].lastInteraction !== interactionTime) return;
 
 sendWhatsAppMessage(phone,
 `A agenda do Dr Henrique Mafra costuma ficar concorrida.
@@ -231,15 +168,16 @@ Posso garantir esse horário para você?`
 
 },60*60*1000);
 
-
 setTimeout(()=>{
 
 if(!conversations[phone]) return;
 
+if(conversations[phone].lastInteraction !== interactionTime) return;
+
 sendWhatsAppMessage(phone,
 `Alguns horários desta semana já foram preenchidos.
 
-Se quiser, ainda posso reservar ${nextDateText} às 19h30 para sua avaliação.`
+Se quiser, posso garantir ${nextDateText} às 19h30 para sua avaliação.`
 );
 
 },3*60*60*1000);
@@ -274,6 +212,8 @@ Explique que cada caso precisa de avaliação.
 
 "A consulta de avaliação tem valor de R$150. Caso realize o procedimento esse valor é abatido."
 
+Se o paciente disser que não pode no horário, tente oferecer outra data.
+
 Sempre conduza para agendamento.
 
 Nunca usar emojis.
@@ -293,25 +233,29 @@ return completion.choices[0].message.content;
 
 }
 
+async function sendWhatsAppMessage(to,text){
+
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+await axios.post(url,new URLSearchParams({
+From:"whatsapp:+14155238886",
+To:to,
+Body:text
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+}
+
 app.post("/whatsapp", async(req,res)=>{
 
 try{
 
 const from=req.body.From;
-
-const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
-
 let message=req.body.Body || "";
-
-if(hasAudio){
-
-const mediaUrl=req.body.MediaUrl0;
-
-const path=await downloadAudio(mediaUrl);
-
-message=await transcribeAudio(path);
-
-}
 
 if(!conversations[from]){
 
@@ -320,31 +264,15 @@ history:[],
 nome:null,
 procedimento:null,
 lead:null,
-iaAtiva:true
+iaAtiva:true,
+lastInteraction:Date.now()
 };
 
 }
 
 const user=conversations[from];
 
-if(message==="#humano"){
-user.iaAtiva=false;
-return res.sendStatus(200);
-}
-
-if(message==="#ia"){
-user.iaAtiva=true;
-return res.sendStatus(200);
-}
-
-if(message==="#reset"){
-conversations[from]={history:[],nome:null,procedimento:null,lead:null,iaAtiva:true};
-return res.sendStatus(200);
-}
-
-if(!user.iaAtiva){
-return res.sendStatus(200);
-}
+user.lastInteraction=Date.now();
 
 const name=detectName(message);
 if(name) user.nome=name;
@@ -365,14 +293,6 @@ const reply=await aiReply(user.history,nextDateText);
 user.history.push({role:"assistant",content:reply});
 
 scheduleFollowUps(user,from);
-
-if(hasAudio){
-
-await generateVoice(reply);
-
-return res.type("text/xml").send(`<Response><Message><Media>${DOMAIN}/audio/reply.mp3</Media></Message></Response>`);
-
-}
 
 res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
