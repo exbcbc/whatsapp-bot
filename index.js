@@ -19,7 +19,7 @@ apiKey: process.env.OPENAI_API_KEY
 const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
 const CLINIC_PHONE="whatsapp:+554731700136";
-const ADMIN_PHONE="whatsapp:+554791812557";
+const ADMIN_PHONE="whatsapp:+5547991812557";
 
 const conversations={};
 
@@ -201,15 +201,17 @@ app.post("/whatsapp",async(req,res)=>{
 try{
 
 const from=req.body.From;
-const to=req.body.To;
+const body=req.body.Body||"";
 
 if(from===CLINIC_PHONE){
 return res.sendStatus(200);
 }
 
-let message=req.body.Body||"";
+let message=body;
 
 const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
+
+/* ADMIN */
 
 if(from===ADMIN_PHONE){
 
@@ -262,6 +264,8 @@ return res.sendStatus(200);
 }
 
 }
+
+/* PACIENTE */
 
 if(!conversations[from]){
 
