@@ -16,14 +16,14 @@ const openai = new OpenAI({
 apiKey: process.env.OPENAI_API_KEY
 });
 
-const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
+const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
 
-const CLINIC_PHONE="whatsapp:+554731700136";
-const ADMIN_PHONE="whatsapp:+5547991812557";
+const CLINIC_PHONE = "whatsapp:+554731700136";
+const ADMIN_PHONE = "whatsapp:+5547991812557";
 
-const conversations={};
+const conversations = {};
 
-let adminTarget=null;
+let adminTarget = null;
 
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
@@ -31,7 +31,7 @@ return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}
 
 function nextAvailableDate(){
 
-let d=getBrazilDate();
+let d = getBrazilDate();
 
 d.setDate(d.getDate()+5);
 
@@ -40,6 +40,7 @@ d.setDate(d.getDate()+1);
 }
 
 return d;
+
 }
 
 function formatDate(date){
@@ -49,20 +50,6 @@ weekday:"long",
 day:"numeric",
 month:"long"
 });
-
-}
-
-function detectProcedure(msg){
-
-const t=msg.toLowerCase();
-
-if(t.includes("botox")) return "botox";
-if(t.includes("preenchimento")) return "preenchimento";
-if(t.includes("papada")) return "lipo papada";
-if(t.includes("melasma")) return "melasma";
-if(t.includes("flacidez")) return "bioestimulador";
-
-return "";
 
 }
 
@@ -149,29 +136,6 @@ fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
-function scheduleFollowUps(user,phone){
-
-const nextDateText=formatDate(nextAvailableDate());
-const interaction=user.lastInteraction;
-
-setTimeout(()=>{
-
-if(!conversations[phone])return;
-
-if(conversations[phone].lastInteraction!==interaction)return;
-
-sendWhatsAppMessage(phone,
-`Vi que você estava vendo sobre procedimentos estéticos.
-
-Ainda tenho avaliação disponível ${nextDateText} às 19h30.
-
-Posso reservar esse horário para você?`
-);
-
-},10*60*1000);
-
-}
-
 async function aiReply(history,nextDateText){
 
 const completion=await openai.chat.completions.create({
@@ -196,7 +160,7 @@ Fluxo da conversa:
 Exemplo:
 "Qual procedimento você gostaria de avaliar?"
 
-3 Explique que é necessário avaliação.
+3 Explique que é necessário uma avaliação.
 
 4 Ofereça agendamento.
 
@@ -228,6 +192,9 @@ app.post("/whatsapp",async(req,res)=>{
 try{
 
 const from=req.body.From;
+
+if(from===CLINIC_PHONE) return res.sendStatus(200);
+
 let message=req.body.Body || "";
 
 const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
@@ -236,9 +203,13 @@ if(from===ADMIN_PHONE){
 
 if(message.startsWith("@")){
 
-adminTarget="whatsapp:+"+message.replace("@","").trim();
+let phone=message.replace("@","").trim();
 
-await sendWhatsAppMessage(ADMIN_PHONE,"Paciente selecionado");
+if(!phone.startsWith("55")) phone="55"+phone;
+
+adminTarget="whatsapp:+"+phone;
+
+await sendWhatsAppMessage(ADMIN_PHONE,"Paciente selecionado.");
 
 return res.sendStatus(200);
 
@@ -246,13 +217,17 @@ return res.sendStatus(200);
 
 if(message.startsWith("#ia")){
 
-const phone="whatsapp:+"+message.replace("#ia","").trim();
+let phone=message.replace("#ia","").trim();
+
+if(!phone.startsWith("55")) phone="55"+phone;
+
+phone="whatsapp:+"+phone;
 
 if(conversations[phone]){
 conversations[phone].iaAtiva=true;
 }
 
-await sendWhatsAppMessage(ADMIN_PHONE,"IA reativada");
+await sendWhatsAppMessage(ADMIN_PHONE,"IA reativada.");
 
 return res.sendStatus(200);
 
@@ -288,16 +263,12 @@ if(!conversations[from]){
 
 conversations[from]={
 history:[],
-procedimento:"",
-iaAtiva:true,
-lastInteraction:Date.now()
+iaAtiva:true
 };
 
 }
 
 const user=conversations[from];
-
-user.lastInteraction=Date.now();
 
 if(hasAudio){
 
@@ -318,7 +289,7 @@ Mensagem:
 ${message}`
 );
 
-if(!user.iaAtiva)return res.sendStatus(200);
+if(!user.iaAtiva) return res.sendStatus(200);
 
 user.history.push({role:"user",content:message});
 
@@ -328,13 +299,9 @@ const reply=await aiReply(user.history,nextDateText);
 
 user.history.push({role:"assistant",content:reply});
 
-scheduleFollowUps(user,from);
-
 if(hasAudio){
 
 await generateVoice(reply);
-
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
 
 return res.type("text/xml").send(`
 <Response>
@@ -358,7 +325,7 @@ res.type("text/xml").send(`<Response><Message>Erro no servidor.</Message></Respo
 
 });
 
-const PORT=process.env.PORT||8080;
+const PORT=process.env.PORT || 8080;
 
 app.listen(PORT,()=>{
 console.log("Servidor rodando");
