@@ -10,6 +10,11 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+if (!fs.existsSync("./audio")) {
+fs.mkdirSync("./audio");
+}
+
 app.use("/audio", express.static("./audio"));
 
 const openai = new OpenAI({
@@ -22,8 +27,6 @@ const CLINIC_PHONE="whatsapp:+554731700136";
 const ADMIN_PHONE="whatsapp:+5547991812557";
 
 const conversations={};
-
-let adminTarget=null;
 
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
@@ -77,6 +80,72 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
+
+}
+
+async function sendWhatsAppMedia(to,media){
+
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+await axios.post(url,new URLSearchParams({
+From:CLINIC_PHONE,
+To:to,
+MediaUrl:media
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+}
+
+async function downloadAudio(url){
+
+const response=await axios({
+url,
+method:"GET",
+responseType:"stream",
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+const path="./audio/input.ogg";
+
+const writer=fs.createWriteStream(path);
+
+response.data.pipe(writer);
+
+return new Promise(resolve=>{
+writer.on("finish",()=>resolve(path));
+});
+
+}
+
+async function transcribeAudio(path){
+
+const transcription=await openai.audio.transcriptions.create({
+file:fs.createReadStream(path),
+model:"gpt-4o-transcribe"
+});
+
+return transcription.text;
+
+}
+
+async function generateVoice(text){
+
+const speech=await openai.audio.speech.create({
+model:"gpt-4o-mini-tts",
+voice:"nova",
+input:text
+});
+
+const buffer=Buffer.from(await speech.arrayBuffer());
+
+fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
@@ -141,7 +210,7 @@ Se o paciente confirmar agendamento:
 
 Confirme o dia e horário escolhidos e diga:
 
-"O agendamento foi registrado para ${dates[0]}. O Dr Henrique Mafra entrará em contato para confirmar sua avaliação."
+"O agendamento foi registrado. O Dr Henrique Mafra entrará em contato para confirmar sua avaliação."
 
 Se perguntarem valores:
 
@@ -169,21 +238,38 @@ app.post("/whatsapp",async(req,res)=>{
 try{
 
 const from=req.body.From;
-
 let message=req.body.Body || "";
+
+const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
 
 if(!conversations[from]){
 
 conversations[from]={
-history:[],
-lastInteraction:Date.now()
+history:[]
 };
 
 }
 
 const user=conversations[from];
 
-user.lastInteraction=Date.now();
+if(hasAudio){
+
+const mediaUrl=req.body.MediaUrl0;
+
+await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+
+const path=await downloadAudio(mediaUrl);
+
+message=await transcribeAudio(path);
+
+}
+
+await sendWhatsAppMessage(ADMIN_PHONE,
+`Paciente: ${from}
+
+Mensagem:
+${message}`
+);
 
 user.history.push({role:"user",content:message});
 
@@ -192,6 +278,22 @@ const dates=nextThreeDates();
 const reply=await aiReply(user.history,dates);
 
 user.history.push({role:"assistant",content:reply});
+
+if(hasAudio){
+
+await generateVoice(reply);
+
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
+
+return res.type("text/xml").send(`
+<Response>
+<Message>
+<Media>${DOMAIN}/audio/reply.mp3</Media>
+</Message>
+</Response>
+`);
+
+}
 
 res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
