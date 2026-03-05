@@ -9,7 +9,6 @@ dotenv.config();
 
 const app = express();
 
-app.use(express.urlencoded({ extended:true }));
 app.use(express.json());
 
 if(!fs.existsSync("./audio")){
@@ -68,7 +67,7 @@ url,
 method:"GET",
 responseType:"stream",
 headers:{
-Authorization:`Bearer ${CHATWOOT_TOKEN}`
+api_access_token:CHATWOOT_TOKEN
 }
 });
 
@@ -109,13 +108,15 @@ input:text
 
 const buffer = Buffer.from(await speech.arrayBuffer());
 
-fs.writeFileSync("./audio/reply.mp3",buffer);
+const path="./audio/reply.mp3";
 
-return "./audio/reply.mp3";
+fs.writeFileSync(path,buffer);
+
+return path;
 
 }
 
-/* ENVIAR TEXTO CHATWOOT */
+/* ENVIAR TEXTO */
 
 async function sendChatwootText(conversationId,text){
 
@@ -234,13 +235,11 @@ return completion.choices[0].message.content;
 
 }
 
-/* ROTA CHATWOOT */
+/* WEBHOOK CHATWOOT */
 
 app.post("/chatwoot",async(req,res)=>{
 
 try{
-
-/* RESPONDER APENAS CLIENTE */
 
 if(req.body.message_type!=="incoming"){
 return res.sendStatus(200);
@@ -255,24 +254,21 @@ return res.sendStatus(200);
 let message=req.body.content || "";
 let isAudio=false;
 
-/* DETECTAR AUDIO */
+/* VERIFICAR AUDIO */
 
-if(!message && req.body.attachments?.length>0){
+const attachments=req.body.message?.attachments || [];
 
-const attachment=req.body.attachments[0];
+if(!message && attachments.length>0){
 
-const audioUrl=
-attachment.data_url ||
-attachment.file_url ||
-attachment.url;
+const audioUrl=attachments[0].data_url;
 
 if(audioUrl){
 
 isAudio=true;
 
-const path = await downloadAudio(audioUrl);
+const path=await downloadAudio(audioUrl);
 
-message = await transcribeAudio(path);
+message=await transcribeAudio(path);
 
 }
 
@@ -306,18 +302,18 @@ content:message
 
 const nextDateText=formatDate(nextAvailableDate());
 
-const reply = await aiReply(user.history,nextDateText);
+const reply=await aiReply(user.history,nextDateText);
 
 user.history.push({
 role:"assistant",
 content:reply
 });
 
-/* RESPOSTA */
+/* RESPONDER */
 
 if(isAudio){
 
-const voice = await generateVoice(reply);
+const voice=await generateVoice(reply);
 
 await sendChatwootAudio(conversationId,voice);
 
