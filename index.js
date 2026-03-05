@@ -9,20 +9,20 @@ dotenv.config();
 
 const app = express();
 
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended:true }));
 app.use(express.json());
 
-if (!fs.existsSync("./audio")) {
+if(!fs.existsSync("./audio")){
 fs.mkdirSync("./audio");
 }
 
-app.use("/audio", express.static("./audio"));
+app.use("/audio",express.static("./audio"));
 
 const openai = new OpenAI({
-apiKey: process.env.OPENAI_API_KEY
+apiKey:process.env.OPENAI_API_KEY
 });
 
-/* CHATWOOT CONFIG */
+/* CHATWOOT */
 
 const CHATWOOT_URL="https://drhm.up.railway.app";
 const CHATWOOT_ACCOUNT_ID="2";
@@ -63,10 +63,13 @@ month:"long"
 
 async function downloadAudio(url){
 
-const response=await axios({
+const response = await axios({
 url,
 method:"GET",
-responseType:"stream"
+responseType:"stream",
+headers:{
+Authorization:`Bearer ${CHATWOOT_TOKEN}`
+}
 });
 
 const path="./audio/input.ogg";
@@ -85,7 +88,7 @@ writer.on("finish",()=>resolve(path));
 
 async function transcribeAudio(path){
 
-const transcription=await openai.audio.transcriptions.create({
+const transcription = await openai.audio.transcriptions.create({
 file:fs.createReadStream(path),
 model:"gpt-4o-transcribe"
 });
@@ -98,13 +101,13 @@ return transcription.text;
 
 async function generateVoice(text){
 
-const speech=await openai.audio.speech.create({
+const speech = await openai.audio.speech.create({
 model:"gpt-4o-mini-tts",
 voice:"nova",
 input:text
 });
 
-const buffer=Buffer.from(await speech.arrayBuffer());
+const buffer = Buffer.from(await speech.arrayBuffer());
 
 fs.writeFileSync("./audio/reply.mp3",buffer);
 
@@ -112,7 +115,7 @@ return "./audio/reply.mp3";
 
 }
 
-/* ENVIAR TEXTO */
+/* ENVIAR TEXTO CHATWOOT */
 
 async function sendChatwootText(conversationId,text){
 
@@ -182,9 +185,7 @@ Posso reservar esse horário para você?`
 
 async function aiReply(history,nextDateText){
 
-try{
-
-const completion=await openai.chat.completions.create({
+const completion = await openai.chat.completions.create({
 
 model:"gpt-4o-mini",
 
@@ -231,14 +232,6 @@ Respostas curtas.
 
 return completion.choices[0].message.content;
 
-}catch(err){
-
-console.log("Erro IA",err);
-
-return "Olá! Como posso ajudar você hoje?";
-
-}
-
 }
 
 /* ROTA CHATWOOT */
@@ -247,12 +240,9 @@ app.post("/chatwoot",async(req,res)=>{
 
 try{
 
-/* EVITAR LOOP DA IA OU AGENTE */
+/* RESPONDER APENAS CLIENTE */
 
-const messageType=req.body.message_type;
-const senderType=req.body.sender?.type;
-
-if(messageType!=="incoming" || senderType!=="contact"){
+if(req.body.message_type!=="incoming"){
 return res.sendStatus(200);
 }
 
@@ -271,15 +261,18 @@ if(!message && req.body.attachments?.length>0){
 
 const attachment=req.body.attachments[0];
 
-const audioUrl=attachment.data_url || attachment.url;
+const audioUrl=
+attachment.data_url ||
+attachment.file_url ||
+attachment.url;
 
 if(audioUrl){
 
 isAudio=true;
 
-const path=await downloadAudio(audioUrl);
+const path = await downloadAudio(audioUrl);
 
-message=await transcribeAudio(path);
+message = await transcribeAudio(path);
 
 }
 
@@ -289,7 +282,7 @@ if(!message){
 return res.sendStatus(200);
 }
 
-/* CRIAR MEMORIA */
+/* MEMORIA */
 
 if(!conversations[conversationId]){
 
@@ -313,7 +306,7 @@ content:message
 
 const nextDateText=formatDate(nextAvailableDate());
 
-const reply=await aiReply(user.history,nextDateText);
+const reply = await aiReply(user.history,nextDateText);
 
 user.history.push({
 role:"assistant",
@@ -324,7 +317,7 @@ content:reply
 
 if(isAudio){
 
-const voice=await generateVoice(reply);
+const voice = await generateVoice(reply);
 
 await sendChatwootAudio(conversationId,voice);
 
@@ -345,7 +338,6 @@ console.log(err);
 res.sendStatus(500);
 
 }
-
 
 });
 
