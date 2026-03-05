@@ -21,6 +21,16 @@ const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 const CLINIC_PHONE="whatsapp:+554731700136";
 const ADMIN_PHONE="whatsapp:+5547991812557";
 
+const INSTAGRAM="https://instagram.com/drhenriquemafra";
+
+const CLINIC_ADDRESS=`
+Clínica WF
+Rua 981, nº 196
+Centro – Balneário Camboriú – SC
+`;
+
+const DOCTOR_PHONE="47 99188-6417";
+
 const conversations={};
 
 let adminTarget=null;
@@ -58,12 +68,11 @@ const t=msg.toLowerCase();
 
 if(t.includes("botox")) return "botox";
 if(t.includes("preenchimento")) return "preenchimento";
-if(t.includes("papada")) return "lipo papada";
-if(t.includes("melasma")) return "melasma";
+if(t.includes("papada")) return "lipo de papada";
+if(t.includes("melasma")) return "tratamento de melasma";
 if(t.includes("flacidez")) return "bioestimulador";
 
 return "";
-
 }
 
 async function sendWhatsAppMessage(to,text){
@@ -161,11 +170,13 @@ if(!conversations[phone])return;
 if(conversations[phone].lastInteraction!==interaction)return;
 
 sendWhatsAppMessage(phone,
-`Vi que vocÃª estava vendo sobre procedimentos estÃ©ticos.
+`Vi que você estava vendo sobre procedimentos estéticos com o Dr Henrique Mafra.
 
-Ainda tenho avaliaÃ§Ã£o disponÃ­vel ${nextDateText} Ã s 19h30.
+Ainda tenho avaliação disponível ${nextDateText} às 19h30.
 
-Posso reservar esse horÃ¡rio para vocÃª?`
+A consulta serve para avaliar seu caso e indicar o melhor tratamento.
+
+Posso reservar esse horário para você?`
 );
 
 },10*60*1000);
@@ -183,34 +194,66 @@ messages:[
 role:"system",
 content:`
 
-VocÃª Ã© a assistente da clÃ­nica do Dr Henrique Mafra.
+Você é a assistente virtual da clínica do Dr Henrique Mafra, especialista em estética avançada.
 
-Atenda de forma profissional e natural.
+Seu objetivo é atender pacientes de forma natural, educada e humanizada e conduzir a conversa até o agendamento da consulta.
 
-Fluxo da conversa:
+Fluxo do atendimento:
 
 1 Cumprimente o paciente.
 
-2 Pergunte qual procedimento ele deseja avaliar.
-
 Exemplo:
-"Qual procedimento vocÃª gostaria de avaliar?"
+"Olá, seja bem-vindo à clínica do Dr Henrique Mafra. É um prazer falar com você."
 
-3 Explique que Ã© necessÃ¡rio avaliaÃ§Ã£o.
+2 Pergunte qual procedimento o paciente deseja avaliar.
 
-4 OfereÃ§a agendamento.
+3 Explique brevemente os procedimentos quando mencionados.
 
-Formato:
+O Dr Henrique Mafra realiza tratamentos como:
 
-"O prÃ³ximo dia disponÃ­vel Ã© ${nextDateText} Ã s 19h30. Posso reservar esse horÃ¡rio para vocÃª?"
+Botox
+Preenchimento facial
+Bioestimuladores de colágeno
+Tratamento de melasma
+Tratamento de flacidez
+Lipo de papada
+Remoção de verrugas
+Remoção de tatuagem
 
-Se perguntarem valores:
+4 Convide o paciente para acompanhar os resultados no Instagram:
 
-"A consulta de avaliaÃ§Ã£o tem valor de R$150 e caso realize o procedimento esse valor Ã© abatido."
+${INSTAGRAM}
+
+5 Explique que é necessária uma consulta de avaliação.
+
+"Antes de realizar qualquer procedimento é importante fazer uma consulta de avaliação para entender seu caso e indicar o tratamento ideal."
+
+6 Fale do valor da consulta somente quando falarem de valores ou agendamento.
+
+"A consulta de avaliação tem o valor de R$150 e caso realize o procedimento esse valor é abatido."
+
+7 Ofereça o agendamento:
+
+"O próximo horário disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
+
+8 Quando o paciente confirmar:
+
+"Perfeito, vou deixar seu horário reservado.
+
+O Dr Henrique Mafra entrará em contato com você pelo número particular dele para confirmar os detalhes da consulta.
+
+Telefone: ${DOCTOR_PHONE}
+
+Endereço da consulta:
+
+${CLINIC_ADDRESS}"
+
+Regras importantes:
 
 Nunca usar emojis.
-
+Responder de forma natural.
 Respostas curtas.
+Sempre conduzir para o agendamento.
 
 `
 },
@@ -231,58 +274,6 @@ const from=req.body.From;
 let message=req.body.Body || "";
 
 const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
-
-if(from===ADMIN_PHONE){
-
-if(message.startsWith("@")){
-
-adminTarget="whatsapp:+"+message.replace("@","").trim();
-
-await sendWhatsAppMessage(ADMIN_PHONE,"Paciente selecionado");
-
-return res.sendStatus(200);
-
-}
-
-if(message.startsWith("#ia")){
-
-const phone="whatsapp:+"+message.replace("#ia","").trim();
-
-if(conversations[phone]){
-conversations[phone].iaAtiva=true;
-}
-
-await sendWhatsAppMessage(ADMIN_PHONE,"IA reativada");
-
-return res.sendStatus(200);
-
-}
-
-if(adminTarget){
-
-if(hasAudio){
-
-const mediaUrl=req.body.MediaUrl0;
-
-const path=await downloadAudio(mediaUrl);
-
-await sendWhatsAppMedia(adminTarget,`${DOMAIN}/audio/input.ogg`);
-
-}else{
-
-await sendWhatsAppMessage(adminTarget,message);
-
-}
-
-if(conversations[adminTarget]){
-conversations[adminTarget].iaAtiva=false;
-}
-
-return res.sendStatus(200);
-
-}
-
-}
 
 if(!conversations[from]){
 
@@ -305,8 +296,6 @@ const mediaUrl=req.body.MediaUrl0;
 
 const path=await downloadAudio(mediaUrl);
 
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
-
 message=await transcribeAudio(path);
 
 }
@@ -318,8 +307,6 @@ Mensagem:
 ${message}`
 );
 
-if(!user.iaAtiva)return res.sendStatus(200);
-
 user.history.push({role:"user",content:message});
 
 const nextDateText=formatDate(nextAvailableDate());
@@ -329,22 +316,6 @@ const reply=await aiReply(user.history,nextDateText);
 user.history.push({role:"assistant",content:reply});
 
 scheduleFollowUps(user,from);
-
-if(hasAudio){
-
-await generateVoice(reply);
-
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
-
-return res.type("text/xml").send(`
-<Response>
-<Message>
-<Media>${DOMAIN}/audio/reply.mp3</Media>
-</Message>
-</Response>
-`);
-
-}
 
 res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
