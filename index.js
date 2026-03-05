@@ -1,50 +1,41 @@
-import express from "express";
-import OpenAI from "openai";
-import dotenv from "dotenv";
-import axios from "axios";
-import fs from "fs";
-import FormData from "form-data";
+import express from "express"
+import dotenv from "dotenv"
+import axios from "axios"
+import fs from "fs"
+import OpenAI from "openai"
 
-dotenv.config();
+dotenv.config()
 
-const app = express();
-app.use(express.json());
+const app=express()
 
-if(!fs.existsSync("./audio")){
-fs.mkdirSync("./audio");
-}
+app.use(express.urlencoded({extended:true}))
+app.use(express.json())
 
-app.use("/audio",express.static("./audio"));
-
-const openai = new OpenAI({
+const openai=new OpenAI({
 apiKey:process.env.OPENAI_API_KEY
-});
+})
 
-/* CHATWOOT */
+const CLINIC_PHONE="whatsapp:+SEU_NUMERO_TWILIO"
 
-const CHATWOOT_URL="https://drhm.up.railway.app";
-const ACCOUNT_ID="2";
-const TOKEN="K4iNRKnchfhA2TcmQC1itzzb";
-
-const conversations={};
+const conversations={}
 
 /* DATA */
 
 function getBrazilDate(){
-return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
+return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}))
 }
 
 function nextAvailableDate(){
 
-let d=getBrazilDate();
+let d=getBrazilDate()
 
-d.setDate(d.getDate()+5);
+d.setDate(d.getDate()+5)
 
 while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
-d.setDate(d.getDate()+1);
+d.setDate(d.getDate()+1)
 }
 
-return d;
+return d
 }
 
 function formatDate(date){
@@ -53,59 +44,49 @@ return date.toLocaleDateString("pt-BR",{
 weekday:"long",
 day:"numeric",
 month:"long"
-});
+})
 
 }
 
-/* BUSCAR MENSAGEM COMPLETA */
-
-async function getMessage(conversationId,messageId){
-
-const response=await axios.get(
-`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/conversations/${conversationId}/messages`,
-{
-headers:{api_access_token:TOKEN}
-});
-
-return response.data.payload.find(m=>m.id==messageId);
-}
-
-/* DOWNLOAD AUDIO */
+/* BAIXAR AUDIO */
 
 async function downloadAudio(url){
 
 const response=await axios({
 url,
 method:"GET",
-responseType:"stream"
-});
+responseType:"stream",
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+})
 
-const path="./audio/input.ogg";
+const path="./audio.ogg"
 
-const writer=fs.createWriteStream(path);
+const writer=fs.createWriteStream(path)
 
-response.data.pipe(writer);
+response.data.pipe(writer)
 
 return new Promise(resolve=>{
-writer.on("finish",()=>resolve(path));
-});
+writer.on("finish",()=>resolve(path))
+})
 
 }
 
-/* TRANSCRIBE */
+/* TRANSCRIÇÃO */
 
-async function transcribeAudio(path){
+async function transcribe(path){
 
 const transcription=await openai.audio.transcriptions.create({
 file:fs.createReadStream(path),
 model:"gpt-4o-transcribe"
-});
+})
 
-return transcription.text;
-
+return transcription.text
 }
 
-/* TTS */
+/* GERAR VOZ */
 
 async function generateVoice(text){
 
@@ -113,54 +94,11 @@ const speech=await openai.audio.speech.create({
 model:"gpt-4o-mini-tts",
 voice:"nova",
 input:text
-});
+})
 
-const buffer=Buffer.from(await speech.arrayBuffer());
+const buffer=Buffer.from(await speech.arrayBuffer())
 
-const path="./audio/reply.mp3";
-
-fs.writeFileSync(path,buffer);
-
-return path;
-
-}
-
-/* SEND TEXT */
-
-async function sendText(conversationId,text){
-
-await axios.post(
-`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/conversations/${conversationId}/messages`,
-{
-content:text,
-message_type:"outgoing"
-},
-{
-headers:{api_access_token:TOKEN}
-}
-);
-
-}
-
-/* SEND AUDIO */
-
-async function sendAudio(conversationId,file){
-
-const form=new FormData();
-
-form.append("message_type","outgoing");
-form.append("attachments[]",fs.createReadStream(file));
-
-await axios.post(
-`${CHATWOOT_URL}/api/v1/accounts/${ACCOUNT_ID}/conversations/${conversationId}/messages`,
-form,
-{
-headers:{
-api_access_token:TOKEN,
-...form.getHeaders()
-}
-}
-);
+fs.writeFileSync("./reply.mp3",buffer)
 
 }
 
@@ -177,126 +115,122 @@ messages:[
 role:"system",
 content:`
 
-Você é a assistente da clínica do Dr Henrique Mafra.
+Você é a assistente da clínica estética do Dr Henrique Mafra.
 
-Seja educada e profissional.
+Seu objetivo é:
 
-Pergunte qual procedimento deseja avaliar.
+1 cumprimentar o paciente
+2 perguntar qual procedimento deseja avaliar
+3 explicar que é necessária avaliação
+4 oferecer horário
 
-Explique que é necessária avaliação.
+exemplo:
 
-Ofereça horário:
+"O próximo horário disponível é ${nextDateText} às 19h30. Posso reservar para você?"
 
-${nextDateText} às 19h30
+Valor da avaliação:
 
-Valor da avaliação: R$150.
+"A consulta custa R$150 e é abatida se realizar o procedimento."
 
 Respostas curtas.
+
+Nunca usar emojis.
+
 `
 },
 ...history
 ]
 
-});
+})
 
-return completion.choices[0].message.content;
-
+return completion.choices[0].message.content
 }
 
-/* WEBHOOK */
+/* TWILIO */
 
-app.post("/chatwoot",async(req,res)=>{
+app.post("/whatsapp",async(req,res)=>{
 
 try{
 
-if(req.body.message_type!=="incoming"){
-return res.sendStatus(200);
-}
+const from=req.body.From
+let message=req.body.Body || ""
 
-const conversationId=req.body.conversation?.id;
-const messageId=req.body.id;
+const hasAudio=req.body.NumMedia && req.body.NumMedia>0
 
-if(!conversationId || !messageId){
-return res.sendStatus(200);
-}
+if(hasAudio){
 
-/* BUSCAR MENSAGEM */
+const audioUrl=req.body.MediaUrl0
 
-const fullMessage=await getMessage(conversationId,messageId);
+const path=await downloadAudio(audioUrl)
 
-let text=fullMessage.content || "";
-let isAudio=false;
+message=await transcribe(path)
 
-/* AUDIO */
-
-if(fullMessage.attachments?.length){
-
-const audioUrl=fullMessage.attachments[0].data_url;
-
-if(audioUrl){
-
-isAudio=true;
-
-const path=await downloadAudio(audioUrl);
-
-text=await transcribeAudio(path);
-}
-
-}
-
-if(!text){
-return res.sendStatus(200);
 }
 
 /* MEMORIA */
 
-if(!conversations[conversationId]){
-conversations[conversationId]={history:[]};
+if(!conversations[from]){
+
+conversations[from]={
+history:[]
 }
 
-const user=conversations[conversationId];
+}
+
+const user=conversations[from]
 
 user.history.push({
 role:"user",
-content:text
-});
+content:message
+})
 
-const nextDateText=formatDate(nextAvailableDate());
+const nextDateText=formatDate(nextAvailableDate())
 
-const reply=await aiReply(user.history,nextDateText);
+const reply=await aiReply(user.history,nextDateText)
 
 user.history.push({
 role:"assistant",
 content:reply
-});
+})
 
-/* RESPONDER */
+/* AUDIO */
 
-if(isAudio){
+if(hasAudio){
 
-const voice=await generateVoice(reply);
+await generateVoice(reply)
 
-await sendAudio(conversationId,voice);
+return res.type("text/xml").send(`
+<Response>
+<Message>
+<Media>${process.env.DOMAIN}/reply.mp3</Media>
+</Message>
+</Response>
+`)
 
-}else{
-
-await sendText(conversationId,reply);
 }
 
-res.sendStatus(200);
+/* TEXTO */
+
+res.type("text/xml").send(`
+<Response>
+<Message>${reply}</Message>
+</Response>
+`)
 
 }catch(err){
 
-console.log(err);
+console.log(err)
 
-res.sendStatus(500);
+res.type("text/xml").send(`
+<Response>
+<Message>Erro no servidor</Message>
+</Response>
+`)
 
 }
 
-});
+})
 
-const PORT=process.env.PORT||8080;
-
-app.listen(PORT,()=>{
-console.log("Servidor rodando");
-});
+app.listen(8080,()=>{
+console.log("BOT rodando")
+})
