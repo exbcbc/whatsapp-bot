@@ -200,13 +200,12 @@ password:process.env.TWILIO_AUTH_TOKEN
 
 function scheduleFollowUps(user,phone){
 
-if(user.followupsScheduled) return;
-
-user.followupsScheduled=true;
-
 const nextDateText=formatDate(nextAvailableDate());
 
 setTimeout(()=>{
+
+if(!conversations[phone]) return;
+
 sendWhatsAppMessage(phone,
 `Vi que você estava vendo sobre o procedimento.
 
@@ -214,9 +213,14 @@ O próximo horário disponível é ${nextDateText} às 19h30.
 
 Posso reservar esse horário para você?`
 );
+
 },10*60*1000);
 
+
 setTimeout(()=>{
+
+if(!conversations[phone]) return;
+
 sendWhatsAppMessage(phone,
 `A agenda do Dr Henrique Mafra costuma ficar concorrida.
 
@@ -224,15 +228,21 @@ Ainda tenho disponível ${nextDateText} às 19h30.
 
 Posso garantir esse horário para você?`
 );
-},2*60*60*1000);
+
+},60*60*1000);
+
 
 setTimeout(()=>{
+
+if(!conversations[phone]) return;
+
 sendWhatsAppMessage(phone,
 `Alguns horários desta semana já foram preenchidos.
 
 Se quiser, ainda posso reservar ${nextDateText} às 19h30 para sua avaliação.`
 );
-},24*60*60*1000);
+
+},3*60*60*1000);
 
 }
 
@@ -250,11 +260,11 @@ content:`
 
 Você é a assistente da clínica do Dr Henrique Mafra.
 
-Seu objetivo é converter o paciente em agendamento.
+Objetivo: converter o paciente para consulta.
 
-Sempre ofereça primeiro o próximo dia disponível às 19h30.
+Sempre oferecer primeiro o próximo dia disponível às 19h30.
 
-Use este formato:
+Formato:
 
 "O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
 
@@ -262,13 +272,13 @@ Se perguntarem valores:
 
 Explique que cada caso precisa de avaliação.
 
-"A consulta de avaliação tem valor de R$150. Caso realize o procedimento no mesmo dia esse valor é abatido."
+"A consulta de avaliação tem valor de R$150. Caso realize o procedimento esse valor é abatido."
 
-Sempre conduza novamente para o agendamento.
-
-Respostas curtas e profissionais.
+Sempre conduza para agendamento.
 
 Nunca usar emojis.
+
+Respostas curtas.
 
 `
 },
