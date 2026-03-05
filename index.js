@@ -8,7 +8,6 @@ import FormData from "form-data";
 dotenv.config();
 
 const app = express();
-
 app.use(express.json());
 
 if(!fs.existsSync("./audio")){
@@ -38,7 +37,6 @@ return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}
 function nextAvailableDate(){
 
 let d=getBrazilDate();
-
 d.setDate(d.getDate()+5);
 
 while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
@@ -49,32 +47,26 @@ return d;
 }
 
 function formatDate(date){
-
 return date.toLocaleDateString("pt-BR",{
 weekday:"long",
 day:"numeric",
 month:"long"
 });
-
 }
 
 /* DOWNLOAD AUDIO */
 
 async function downloadAudio(url){
 
-const response = await axios({
+const response=await axios({
 url,
 method:"GET",
-responseType:"stream",
-headers:{
-api_access_token:CHATWOOT_TOKEN
-}
+responseType:"stream"
 });
 
 const path="./audio/input.ogg";
 
 const writer=fs.createWriteStream(path);
-
 response.data.pipe(writer);
 
 return new Promise(resolve=>{
@@ -87,7 +79,7 @@ writer.on("finish",()=>resolve(path));
 
 async function transcribeAudio(path){
 
-const transcription = await openai.audio.transcriptions.create({
+const transcription=await openai.audio.transcriptions.create({
 file:fs.createReadStream(path),
 model:"gpt-4o-transcribe"
 });
@@ -100,13 +92,13 @@ return transcription.text;
 
 async function generateVoice(text){
 
-const speech = await openai.audio.speech.create({
+const speech=await openai.audio.speech.create({
 model:"gpt-4o-mini-tts",
 voice:"nova",
 input:text
 });
 
-const buffer = Buffer.from(await speech.arrayBuffer());
+const buffer=Buffer.from(await speech.arrayBuffer());
 
 const path="./audio/reply.mp3";
 
@@ -186,7 +178,7 @@ Posso reservar esse horário para você?`
 
 async function aiReply(history,nextDateText){
 
-const completion = await openai.chat.completions.create({
+const completion=await openai.chat.completions.create({
 
 model:"gpt-4o-mini",
 
@@ -194,7 +186,6 @@ messages:[
 {
 role:"system",
 content:`
-
 Você é a assistente da clínica do Dr Henrique Mafra.
 
 Atenda de forma profissional e natural.
@@ -205,14 +196,9 @@ Fluxo da conversa:
 
 2 Pergunte qual procedimento ele deseja avaliar.
 
-Exemplo:
-"Qual procedimento você gostaria de avaliar?"
-
 3 Explique que é necessário avaliação.
 
 4 Ofereça agendamento.
-
-Formato:
 
 "O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
 
@@ -221,9 +207,7 @@ Se perguntarem valores:
 "A consulta de avaliação tem valor de R$150 e caso realize o procedimento esse valor é abatido."
 
 Nunca usar emojis.
-
 Respostas curtas.
-
 `
 },
 ...history
@@ -254,13 +238,16 @@ return res.sendStatus(200);
 let message=req.body.content || "";
 let isAudio=false;
 
-/* VERIFICAR AUDIO */
+/* DETECTAR AUDIO */
 
-const attachments=req.body.message?.attachments || [];
+const attachments=req.body.attachments || [];
 
-if(!message && attachments.length>0){
+if(attachments.length>0){
 
-const audioUrl=attachments[0].data_url;
+const audioUrl=
+attachments[0].data_url ||
+attachments[0].file_url ||
+attachments[0].url;
 
 if(audioUrl){
 
@@ -290,7 +277,6 @@ lastInteraction:Date.now()
 }
 
 const user=conversations[conversationId];
-
 user.lastInteraction=Date.now();
 
 /* HISTORICO */
@@ -330,7 +316,6 @@ res.sendStatus(200);
 }catch(err){
 
 console.log(err);
-
 res.sendStatus(500);
 
 }
