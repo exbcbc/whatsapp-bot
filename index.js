@@ -3,7 +3,6 @@ import OpenAI from "openai";
 import dotenv from "dotenv";
 import axios from "axios";
 import fs from "fs";
-import path from "path";
 
 dotenv.config();
 
@@ -33,31 +32,26 @@ function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
+function nextAvailableDate(){
+
+let d=getBrazilDate();
+d.setDate(d.getDate()+5);
+
+while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
+d.setDate(d.getDate()+1);
+}
+
+return d;
+}
+
 function formatDate(date){
+
 return date.toLocaleDateString("pt-BR",{
 weekday:"long",
 day:"numeric",
 month:"long"
 });
-}
 
-function nextThreeDates(){
-
-let d=getBrazilDate();
-d.setDate(d.getDate()+5);
-
-const dates=[];
-
-while(dates.length<3){
-
-if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
-dates.push(formatDate(new Date(d)));
-}
-
-d.setDate(d.getDate()+1);
-}
-
-return dates;
 }
 
 async function sendWhatsAppMessage(to,text){
@@ -94,31 +88,6 @@ password:process.env.TWILIO_AUTH_TOKEN
 
 }
 
-async function downloadTwilioMedia(mediaUrl,i){
-
-const response=await axios({
-url:mediaUrl,
-method:"GET",
-responseType:"stream",
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-const fileName=`media_${Date.now()}_${i}`;
-const filePath=`./audio/${fileName}.bin`;
-
-const writer=fs.createWriteStream(filePath);
-
-response.data.pipe(writer);
-
-await new Promise(resolve=>writer.on("finish",resolve));
-
-return `${DOMAIN}/audio/${fileName}.bin`;
-
-}
-
 async function downloadAudio(url){
 
 const response=await axios({
@@ -131,22 +100,22 @@ password:process.env.TWILIO_AUTH_TOKEN
 }
 });
 
-const pathFile="./audio/input.ogg";
+const path="./audio/input.ogg";
 
-const writer=fs.createWriteStream(pathFile);
+const writer=fs.createWriteStream(path);
 
 response.data.pipe(writer);
 
 return new Promise(resolve=>{
-writer.on("finish",()=>resolve(pathFile));
+writer.on("finish",()=>resolve(path));
 });
 
 }
 
-async function transcribeAudio(pathFile){
+async function transcribeAudio(path){
 
 const transcription=await openai.audio.transcriptions.create({
-file:fs.createReadStream(pathFile),
+file:fs.createReadStream(path),
 model:"gpt-4o-transcribe"
 });
 
@@ -168,7 +137,7 @@ fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
-async function aiReply(history,dates){
+async function aiReply(history,nextDateText){
 
 const completion=await openai.chat.completions.create({
 
@@ -242,67 +211,57 @@ let message=req.body.Body || "";
 const numMedia=parseInt(req.body.NumMedia || 0);
 
 if(!conversations[from]){
-conversations[from]={history:[]};
+
+conversations[from]={
+history:[],
+lastInteraction:Date.now()
+};
+
 }
 
 const user=conversations[from];
 
-let audioReceived=false;
+let hasAudio=false;
 
 if(numMedia>0){
 
-for(let i=0;i<numMedia;i++){
+const mediaUrl=req.body.MediaUrl0;
+const mediaType=req.body.MediaContentType0;
 
-const mediaUrl=req.body["MediaUrl"+i];
+if(mediaType.includes("audio")){
 
-const mediaType=req.body["MediaContentType"+i];
+hasAudio=true;
 
-const publicUrl=await downloadTwilioMedia(mediaUrl,i);
+const path=await downloadAudio(mediaUrl);
 
-await sendWhatsAppMedia(ADMIN_PHONE,publicUrl);
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
 
-if(mediaType && mediaType.includes("audio")){
-audioReceived=true;
-}
+message=await transcribeAudio(path);
 
-}
+}else{
 
-if(audioReceived){
-
-const audioUrl=req.body.MediaUrl0;
-
-const audioPath=await downloadAudio(audioUrl);
-
-message=await transcribeAudio(audioPath);
+await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
 
 }
 
 }
-
-if(message){
 
 await sendWhatsAppMessage(ADMIN_PHONE,
 `Paciente: ${from}
 
 Mensagem:
-${message}`);
-
-}
+${message}`
+);
 
 user.history.push({role:"user",content:message});
 
-const dates=nextThreeDates();
+const nextDateText=formatDate(nextAvailableDate());
 
-const reply=await aiReply(user.history,dates);
+const reply=await aiReply(user.history,nextDateText);
 
 user.history.push({role:"assistant",content:reply});
 
-await sendWhatsAppMessage(ADMIN_PHONE,
-`Resposta IA para ${from}:
-
-${reply}`);
-
-if(audioReceived){
+if(hasAudio){
 
 await generateVoice(reply);
 
