@@ -202,9 +202,8 @@ try{
 
 const from=req.body.From;
 let message=req.body.Body||"";
-const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
 
-/* BLOQUEIA mensagens do próprio bot */
+const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
 
 if(from===CLINIC_PHONE){
 return res.sendStatus(200);
@@ -260,15 +259,24 @@ if(hasAudio){
 
 const mediaUrl=req.body.MediaUrl0;
 
+// envia áudio para você
 await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
 
 const path=await downloadAudio(mediaUrl);
 
 message=await transcribeAudio(path);
 
+await sendWhatsAppMessage(
+ADMIN_PHONE,
+`🎤 Áudio transcrito:
+
+${message}`
+);
+
 }
 
-await sendWhatsAppMessage(ADMIN_PHONE,
+await sendWhatsAppMessage(
+ADMIN_PHONE,
 `Paciente: ${from}
 
 Mensagem:
@@ -287,11 +295,11 @@ const reply=await aiReply(user.history,nextDateText);
 
 user.history.push({role:"assistant",content:reply});
 
+await sendWhatsAppMessage(ADMIN_PHONE,reply);
+
 if(hasAudio){
 
 await generateVoice(reply);
-
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
 
 return res.type("text/xml").send(`
 <Response>
@@ -302,8 +310,6 @@ return res.type("text/xml").send(`
 `);
 
 }
-
-await sendWhatsAppMessage(ADMIN_PHONE,reply);
 
 res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
