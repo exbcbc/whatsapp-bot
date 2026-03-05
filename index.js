@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import dotenv from "dotenv";
 import axios from "axios";
 import fs from "fs";
+import path from "path";
 
 dotenv.config();
 
@@ -43,7 +44,6 @@ month:"long"
 function nextThreeDates(){
 
 let d=getBrazilDate();
-
 d.setDate(d.getDate()+5);
 
 const dates=[];
@@ -55,7 +55,6 @@ dates.push(formatDate(new Date(d)));
 }
 
 d.setDate(d.getDate()+1);
-
 }
 
 return dates;
@@ -95,6 +94,31 @@ password:process.env.TWILIO_AUTH_TOKEN
 
 }
 
+async function downloadTwilioMedia(mediaUrl,i){
+
+const response=await axios({
+url:mediaUrl,
+method:"GET",
+responseType:"stream",
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+const fileName=`media_${Date.now()}_${i}`;
+const filePath=`./audio/${fileName}.bin`;
+
+const writer=fs.createWriteStream(filePath);
+
+response.data.pipe(writer);
+
+await new Promise(resolve=>writer.on("finish",resolve));
+
+return `${DOMAIN}/audio/${fileName}.bin`;
+
+}
+
 async function downloadAudio(url){
 
 const response=await axios({
@@ -107,22 +131,22 @@ password:process.env.TWILIO_AUTH_TOKEN
 }
 });
 
-const path="./audio/input.ogg";
+const pathFile="./audio/input.ogg";
 
-const writer=fs.createWriteStream(path);
+const writer=fs.createWriteStream(pathFile);
 
 response.data.pipe(writer);
 
 return new Promise(resolve=>{
-writer.on("finish",()=>resolve(path));
+writer.on("finish",()=>resolve(pathFile));
 });
 
 }
 
-async function transcribeAudio(path){
+async function transcribeAudio(pathFile){
 
 const transcription=await openai.audio.transcriptions.create({
-file:fs.createReadStream(path),
+file:fs.createReadStream(pathFile),
 model:"gpt-4o-transcribe"
 });
 
@@ -165,9 +189,6 @@ Fluxo da conversa:
 
 2 Pergunte qual procedimento ele deseja avaliar.
 
-Exemplo:
-"Qual procedimento você gostaria de avaliar?"
-
 3 Explique que é necessária uma avaliação antes de qualquer procedimento.
 
 4 Ofereça agendamento.
@@ -178,16 +199,7 @@ ${dates[0]} às 19h30
 ${dates[1]} às 19h30  
 ${dates[2]} às 19h30  
 
-Sempre ofereça primeiro o primeiro horário.
-
-Exemplo:
-"O próximo horário disponível é ${dates[0]} às 19h30. Posso reservar para você?"
-
-Regras de agenda:
-
-Sempre mencionar dia e horário juntos.
-
-Nunca mencionar apenas o horário.
+Sempre oferecer primeiro o primeiro horário.
 
 Priorizar sempre 19h30.
 
@@ -195,23 +207,15 @@ Se o paciente disser que não pode à noite:
 
 ofereça horário alternativo entre 14h e 18h.
 
-Exemplo:
-
-"Podemos verificar ${dates[0]} às 14h ou ${dates[1]} às 16h. Qual fica melhor para você?"
-
 Nunca sugerir horários antes de ${dates[0]}.
 
-Se o paciente confirmar agendamento:
-
-Confirme o dia e horário escolhidos e diga:
+Se confirmar agendamento:
 
 "O agendamento foi registrado. O Dr Henrique Mafra entrará em contato para confirmar sua avaliação."
 
-Se perguntarem valores:
+Valor:
 
 "A consulta de avaliação tem valor de R$150 e caso realize o procedimento esse valor é abatido."
-
-Se mencionarem botox, preenchimento, papada, melasma ou flacidez explique brevemente que a avaliação define o melhor tratamento.
 
 Nunca usar emojis.
 
@@ -243,25 +247,33 @@ conversations[from]={history:[]};
 
 const user=conversations[from];
 
+let audioReceived=false;
+
 if(numMedia>0){
 
 for(let i=0;i<numMedia;i++){
 
 const mediaUrl=req.body["MediaUrl"+i];
 
-await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+const mediaType=req.body["MediaContentType"+i];
+
+const publicUrl=await downloadTwilioMedia(mediaUrl,i);
+
+await sendWhatsAppMedia(ADMIN_PHONE,publicUrl);
+
+if(mediaType && mediaType.includes("audio")){
+audioReceived=true;
+}
 
 }
 
-const mediaType=req.body.MediaContentType0;
+if(audioReceived){
 
-if(mediaType && mediaType.includes("audio")){
+const audioUrl=req.body.MediaUrl0;
 
-const mediaUrl=req.body.MediaUrl0;
+const audioPath=await downloadAudio(audioUrl);
 
-const path=await downloadAudio(mediaUrl);
-
-message=await transcribeAudio(path);
+message=await transcribeAudio(audioPath);
 
 }
 
@@ -286,15 +298,11 @@ const reply=await aiReply(user.history,dates);
 user.history.push({role:"assistant",content:reply});
 
 await sendWhatsAppMessage(ADMIN_PHONE,
-`Resposta da IA para ${from}:
+`Resposta IA para ${from}:
 
 ${reply}`);
 
-if(numMedia>0){
-
-const mediaType=req.body.MediaContentType0;
-
-if(mediaType && mediaType.includes("audio")){
+if(audioReceived){
 
 await generateVoice(reply);
 
@@ -307,8 +315,6 @@ return res.type("text/xml").send(`
 </Message>
 </Response>
 `);
-
-}
 
 }
 
