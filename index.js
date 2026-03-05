@@ -25,7 +25,7 @@ const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
 const CLINIC_PHONE="whatsapp:+554731700136";
 const ADMIN_PHONE="whatsapp:+5547991812557";
-const INSTAGRAM="@drhenriquemafra";
+const INSTAGRAM="@dr.henriquemafra";
 
 const CLINIC_ADDRESS=`
 Clínica WF
@@ -69,19 +69,36 @@ month:"long"
 });
 }
 
-async function sendWhatsAppMessage(to,text,media=null){
+async function sendWhatsAppMessage(to,text=null){
 
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
-const data={
+let data={
 From:CLINIC_PHONE,
-To:to,
-Body:text
+To:to
 };
 
-if(media){
-data.MediaUrl=media;
+if(text){
+data.Body=text;
 }
+
+await axios.post(url,new URLSearchParams(data),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+}
+
+async function sendWhatsAppMedia(to,media){
+
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+let data={
+From:CLINIC_PHONE,
+To:to,
+MediaUrl:media
+};
 
 await axios.post(url,new URLSearchParams(data),{
 auth:{
@@ -268,11 +285,11 @@ const path=await downloadAudio(mediaUrl);
 
 message=await transcribeAudio(path);
 
-await sendWhatsAppMessage(ADMIN_PHONE,"Áudio recebido",mediaUrl);
+await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
 
 }else{
 
-await sendWhatsAppMessage(ADMIN_PHONE,"Mídia recebida",mediaUrl);
+await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
 
 }
 }
@@ -308,9 +325,9 @@ if(hasAudio){
 
 const audioUrl=await generateVoice(reply);
 
-await sendWhatsAppMessage(from,"",audioUrl);
+await sendWhatsAppMedia(from,audioUrl);
 
-await sendWhatsAppMessage(ADMIN_PHONE,"Resposta enviada",audioUrl);
+await sendWhatsAppMedia(ADMIN_PHONE,audioUrl);
 
 }else{
 
