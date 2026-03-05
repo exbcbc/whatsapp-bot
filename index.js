@@ -82,7 +82,6 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
-
 }
 
 async function sendWhatsAppMedia(to,media){
@@ -99,7 +98,6 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
-
 }
 
 async function downloadAudio(url){
@@ -123,7 +121,6 @@ response.data.pipe(writer);
 return new Promise(resolve=>{
 writer.on("finish",()=>resolve(`${DOMAIN}/audio/${fileName}`));
 });
-
 }
 
 async function transcribeAudio(path){
@@ -181,10 +178,8 @@ role:"system",
 content:`
 Seu nome é IAra assistente virtual do Dr Henrique Mafra.
 
-Fluxo:
-
 Cumprimente o paciente.
-Pergunte procedimento.
+Pergunte o procedimento.
 Explique brevemente.
 
 Procedimentos:
@@ -197,7 +192,7 @@ Lipo de papada
 Remoção de verrugas
 Remoção de tatuagem
 
-Convide para Instagram:
+Instagram:
 ${INSTAGRAM}
 
 Consulta avaliação: R$150 abatido.
@@ -208,13 +203,12 @@ ${formatDate(dates[0])} às 19h30
 ${formatDate(dates[1])} às 19h30
 ${formatDate(dates[2])} às 19h30
 
-Telefone Dr Henrique:
+Telefone:
 ${DOCTOR_PHONE}
 
 Endereço:
 ${CLINIC_ADDRESS}
 
-Nunca usar emojis.
 Respostas curtas.
 `
 },
@@ -227,6 +221,8 @@ return completion.choices[0].message.content;
 }
 
 app.post("/whatsapp",async(req,res)=>{
+
+res.type("text/xml").send("<Response></Response>");
 
 try{
 
@@ -284,9 +280,7 @@ Telefone:
 ${DOCTOR_PHONE}
 `);
 
-res.sendStatus(200);
 return;
-
 }
 
 user.history.push({role:"user",content:message});
@@ -309,13 +303,9 @@ await sendWhatsAppMessage(from,reply);
 
 }
 
-res.sendStatus(200);
-
 }catch(err){
 
 console.log(err);
-
-res.sendStatus(200);
 
 }
 
