@@ -172,7 +172,7 @@ Fluxo da conversa:
 Exemplo:
 "Qual procedimento você gostaria de avaliar?"
 
-3 Explique que é necessário avaliação.
+3 Explique que é necessário uma avaliação.
 
 4 Ofereça agendamento.
 
@@ -245,9 +245,7 @@ if(hasAudio){
 
 const mediaUrl=req.body.MediaUrl0;
 
-const path=await downloadAudio(mediaUrl);
-
-await sendWhatsAppMedia(adminTarget,`${DOMAIN}/audio/input.ogg`);
+await sendWhatsAppMedia(adminTarget,mediaUrl);
 
 }else{
 
@@ -282,7 +280,7 @@ const mediaUrl=req.body.MediaUrl0;
 
 const path=await downloadAudio(mediaUrl);
 
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
+await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
 
 message=await transcribeAudio(path);
 
@@ -310,6 +308,9 @@ user.history.push({role:"assistant",content:reply});
 if(hasAudio){
 
 await generateVoice(reply);
+
+// ENVIA ÁUDIO DA IA PARA VOCÊ
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
 
 return res.type("text/xml").send(`
 <Response>
