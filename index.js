@@ -10,15 +10,18 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use("/audio", express.static("./audio"));
 
 const openai = new OpenAI({
 apiKey: process.env.OPENAI_API_KEY
 });
 
-const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
+/* CHATWOOT CONFIG */
 
-const CLINIC_PHONE="whatsapp:+554731700136";
+const CHATWOOT_URL="https://drhm.up.railway.app";
+const CHATWOOT_ACCOUNT_ID="2";
+const CHATWOOT_TOKEN="K4iNRKnchfhA2TcmQC1itzzb";
+
+/* MEMORIA DE CONVERSAS */
 
 const conversations={};
 
@@ -37,6 +40,7 @@ d.setDate(d.getDate()+1);
 }
 
 return d;
+
 }
 
 function formatDate(date){
@@ -49,101 +53,36 @@ month:"long"
 
 }
 
-async function sendWhatsAppMessage(to,text){
+/* DETECTAR PROCEDIMENTO */
 
-const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+function detectProcedure(msg){
 
-await axios.post(url,new URLSearchParams({
-From:CLINIC_PHONE,
-To:to,
-Body:text
-}),{
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
+const t=msg.toLowerCase();
 
-}
+if(t.includes("botox")) return "botox";
+if(t.includes("preenchimento")) return "preenchimento";
+if(t.includes("papada")) return "lipo papada";
+if(t.includes("melasma")) return "melasma";
+if(t.includes("flacidez")) return "bioestimulador";
 
-async function sendWhatsAppMedia(to,media){
-
-const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
-
-await axios.post(url,new URLSearchParams({
-From:CLINIC_PHONE,
-To:to,
-MediaUrl:media
-}),{
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
+return "";
 
 }
 
-async function downloadAudio(url){
+/* FOLLOW UP AUTOMÁTICO */
 
-const response=await axios({
-url,
-method:"GET",
-responseType:"stream",
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-const path="./audio/input.ogg";
-
-const writer=fs.createWriteStream(path);
-
-response.data.pipe(writer);
-
-return new Promise(resolve=>{
-writer.on("finish",()=>resolve(path));
-});
-
-}
-
-async function transcribeAudio(path){
-
-const transcription=await openai.audio.transcriptions.create({
-file:fs.createReadStream(path),
-model:"gpt-4o-transcribe"
-});
-
-return transcription.text;
-
-}
-
-async function generateVoice(text){
-
-const speech=await openai.audio.speech.create({
-model:"gpt-4o-mini-tts",
-voice:"nova",
-input:text
-});
-
-const buffer=Buffer.from(await speech.arrayBuffer());
-
-fs.writeFileSync("./audio/reply.mp3",buffer);
-
-}
-
-function scheduleFollowUps(user,phone){
+function scheduleFollowUps(user,conversationId){
 
 const nextDateText=formatDate(nextAvailableDate());
 const interaction=user.lastInteraction;
 
-setTimeout(()=>{
+setTimeout(async()=>{
 
-if(!conversations[phone])return;
+if(!conversations[conversationId]) return;
 
-if(conversations[phone].lastInteraction!==interaction)return;
+if(conversations[conversationId].lastInteraction!==interaction) return;
 
-sendWhatsAppMessage(phone,
+await sendChatwootMessage(conversationId,
 `Vi que você estava vendo sobre procedimentos estéticos.
 
 Ainda tenho avaliação disponível ${nextDateText} às 19h30.
@@ -154,6 +93,8 @@ Posso reservar esse horário para você?`
 },10*60*1000);
 
 }
+
+/* IA */
 
 async function aiReply(history,nextDateText){
 
@@ -206,108 +147,76 @@ return completion.choices[0].message.content;
 
 }
 
-/* ============================= */
-/* ROTA TWILIO WHATSAPP */
-/* ============================= */
+/* ENVIAR MENSAGEM PARA CHATWOOT */
 
-app.post("/whatsapp",async(req,res)=>{
+async function sendChatwootMessage(conversationId,text){
 
-try{
-
-const from=req.body.From;
-let message=req.body.Body || "";
-
-const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
-
-if(!conversations[from]){
-
-conversations[from]={
-history:[],
-iaAtiva:true,
-lastInteraction:Date.now()
-};
+await axios.post(
+`${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/messages`,
+{
+content:text,
+message_type:"outgoing"
+},
+{
+headers:{
+api_access_token:CHATWOOT_TOKEN
+}
+}
+);
 
 }
 
-const user=conversations[from];
-
-user.lastInteraction=Date.now();
-
-if(hasAudio){
-
-const mediaUrl=req.body.MediaUrl0;
-
-const path=await downloadAudio(mediaUrl);
-
-message=await transcribeAudio(path);
-
-}
-
-if(!user.iaAtiva)return res.sendStatus(200);
-
-user.history.push({role:"user",content:message});
-
-const nextDateText=formatDate(nextAvailableDate());
-
-const reply=await aiReply(user.history,nextDateText);
-
-user.history.push({role:"assistant",content:reply});
-
-scheduleFollowUps(user,from);
-
-if(hasAudio){
-
-await generateVoice(reply);
-
-return res.type("text/xml").send(`
-<Response>
-<Message>
-<Media>${DOMAIN}/audio/reply.mp3</Media>
-</Message>
-</Response>
-`);
-
-}
-
-res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
-
-}catch(err){
-
-console.log(err);
-
-res.type("text/xml").send(`<Response><Message>Erro no servidor.</Message></Response>`);
-
-}
-
-});
-
-/* ============================= */
 /* ROTA CHATWOOT */
-/* ============================= */
 
 app.post("/chatwoot",async(req,res)=>{
 
 try{
 
-const message=req.body.content || req.body.message || "";
+const message=req.body.content || "";
+const conversationId=req.body.conversation?.id;
 
-if(!message){
+if(!message || !conversationId){
 return res.sendStatus(200);
 }
 
+if(!conversations[conversationId]){
+
+conversations[conversationId]={
+history:[],
+procedimento:"",
+lastInteraction:Date.now()
+};
+
+}
+
+const user=conversations[conversationId];
+
+user.lastInteraction=Date.now();
+
+user.history.push({
+role:"user",
+content:message
+});
+
 const nextDateText=formatDate(nextAvailableDate());
 
-const reply=await aiReply([
-{role:"user",content:message}
-],nextDateText);
+const reply=await aiReply(user.history,nextDateText);
 
-res.json({
+user.history.push({
+role:"assistant",
 content:reply
 });
+
+await sendChatwootMessage(conversationId,reply);
+
+scheduleFollowUps(user,conversationId);
+
+res.sendStatus(200);
 
 }catch(err){
 
 console.log(err);
+
 res.sendStatus(500);
 
 }
