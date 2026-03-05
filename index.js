@@ -29,7 +29,7 @@ const INSTAGRAM="@drhenriquemafra";
 
 const CLINIC_ADDRESS=`
 Clínica WF
-Rua 981, Número 196 bairro,
+Rua 981, Número 196
 Centro em Balneário Camboriú, Santa Catarina
 `;
 
@@ -158,38 +158,52 @@ fs.writeFileSync("./audio/reply.mp3",buffer);
 
 }
 
+function isExistingPatient(message){
+
+const text=message.toLowerCase();
+
+return(
+text.includes("já sou paciente")||
+text.includes("ja sou paciente")||
+text.includes("já falei com o dr")||
+text.includes("ja falei com o dr")||
+text.includes("tava falando com o dr")||
+text.includes("estava falando com o dr")
+);
+
+}
+
 async function aiReply(history){
 
 const dates=nextAvailableDates();
 
 const completion=await openai.chat.completions.create({
 
-model:"gpt-4o-mini",
+model:"gpt-4o",
 
 messages:[
 {
 role:"system",
 content:`
 
-Seu nome é IAra você é assistente virtual do Dr Henrique Mafra, especialista em estética avançada.
+Seu nome é IAra você é assistente virtual do Dr Henrique Mafra especialista em estética avançada.
 
-Seu objetivo é atender pacientes de forma natural, educada e humanizada e conduzir a conversa até o agendamento da consulta.
+Seu objetivo é atender pacientes de forma natural educada e humanizada e conduzir a conversa até o agendamento da consulta.
+
+Você deve seguir EXATAMENTE o fluxo abaixo e nunca pular etapas.
 
 Fluxo do atendimento:
 
 1 Cumprimente o paciente.
 
 Exemplo:
-"Olá, seja bem-vindo sou a Iara assistente virtual do Dr Henrique Mafra. É um prazer falar com você."
+Olá seja bem-vindo sou a Iara assistente virtual do Dr Henrique Mafra. É um prazer falar com você.
 
-2 Pergunte qual procedimento o paciente deseja fazer ou saber mais.
+2 Pergunte qual procedimento o paciente deseja.
 
-Exemplo:
-"Como posso ajudar você hoje? Qual procedimento você gostaria ?"
+3 Quando o paciente mencionar um procedimento explique brevemente.
 
-3 Quando o paciente mencionar um procedimento, explique brevemente.
-
-O Dr Henrique Mafra realiza tratamentos como:
+Procedimentos realizados:
 
 Botox  
 Preenchimento facial  
@@ -200,100 +214,51 @@ Lipo de papada
 Remoção de verrugas  
 Remoção de tatuagem  
 
-Explique de forma breve e natural o procedimento.
-
-4 Convide o paciente para acompanhar os resultados da clínica no Instagram:
+4 Convide para ver resultados no Instagram:
 
 ${INSTAGRAM}
 
-Exemplo:
+5 Explique que é necessária consulta de avaliação.
 
-"Se quiser acompanhar resultados e o dia a dia do Dr Henrique, você também pode ver no Instagram:
-${INSTAGRAM}"
+6 Sobre valores somente quando perguntarem:
 
-5 Explique que é necessária uma consulta de avaliação.
+A consulta de avaliação tem o valor de R$150 e caso realize o procedimento esse valor é abatido.
 
-Exemplo:
+7 Ofereça agendamento:
 
-"Antes de realizar qualquer procedimento é importante fazer uma consulta de avaliação para entender melhor seu caso e indicar o tratamento ideal."
+${formatDate(dates[0])} às 19h30  
+${formatDate(dates[1])} às 19h30  
+${formatDate(dates[2])} às 19h30  
 
-6 Sobre valores:
+Sempre oferecer primeiro o primeiro horário.
 
-Somente quando perguntarem valores ou quando falar de agendamento, informe:
+8 Se não puder oferecer os próximos.
 
-"A consulta de avaliação tem o valor de R$150 e caso você realize o procedimento esse valor é abatido."
+9 Priorizar horário 19h30.
 
-7 Ofereça o agendamento.
+10 Se não puder à noite oferecer horário entre 14h e 18h.
 
-Horários disponíveis para avaliação:
+11 Nunca sugerir horário antes de ${formatDate(dates[0])}
 
-${dates[0]} às 19h30  
-${dates[1]} às 19h30  
-${dates[2]} às 19h30  
+12 Quando confirmar agendamento:
 
-Sempre oferecer primeiro o primeiro horário disponível.
+Perfeito vou deixar seu horário reservado.
 
-Exemplo:
-
-"O próximo horário disponível é ${dates[0]} às 19h30.
-
-Posso reservar esse horário para você?"
-
-8 Se o paciente disser que não pode nesse dia, ofereça os próximos.
-
-Exemplo:
-
-"Também tenho disponibilidade:
-
-${dates[1]} às 19h30  
-${dates[2]} às 19h30
-
-Algum desses horários funciona para você?"
-
-9 Priorizar sempre horários às 19h30.
-
-10 Se o paciente disser que não pode à noite:
-
-ofereça horário alternativo entre 14h e 18h.
-
-Exemplo:
-
-"Sem problema.
-
-Também podemos verificar um horário durante a tarde, entre 14h e 18h.
-
-Qual horário costuma ser melhor para você?"
-
-11 Nunca sugerir horários antes de ${dates[0]}.
-
-12 Quando o paciente confirmar o agendamento:
-
-Responder:
-
-"Perfeito, vou deixar seu horário reservado.
-
-O Dr Henrique Mafra entrará em contato com você pelo número particular dele para confirmar os detalhes da consulta.
+O Dr Henrique Mafra entrará em contato com você pelo número particular dele para confirmar os detalhes.
 
 Telefone:
 ${DOCTOR_PHONE}
 
-13 Quando a paciente falar que ja estava falando com o dr Henrique que ja é paciente exemplo 
-"tava falando com o dr Henrique" 
-voce deve falar semelhante a isso:
-" Ha ok vou avisá-lo então O Dr Henrique Mafra entrará em contato com você pelo número particular dele Telefone:
-${DOCTOR_PHONE} "
-
 Endereço da consulta:
 
-${CLINIC_ADDRESS}"
+${CLINIC_ADDRESS}
 
-Regras importantes:
+Regras:
 
 Nunca usar emojis.
-Responder de forma natural.
-Respostas curtas.
+Responder curto.
 Nunca parecer robô.
-Sempre conduzir para o agendamento.
+Sempre conduzir para agendamento.
 
 `
 },
@@ -326,6 +291,12 @@ lastInteraction:Date.now()
 
 const user=conversations[from];
 
+if(Date.now()-user.lastInteraction>1000*60*30){
+user.history=[];
+}
+
+user.lastInteraction=Date.now();
+
 let hasAudio=false;
 
 if(numMedia>0){
@@ -348,6 +319,21 @@ message=await transcribeAudio(path);
 await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
 
 }
+
+}
+
+if(isExistingPatient(message)){
+
+const reply=`
+Perfeito vou avisar o Dr Henrique Mafra.
+
+Ele continuará o atendimento diretamente pelo número particular dele.
+
+Telefone:
+${DOCTOR_PHONE}
+`;
+
+return res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
 }
 
