@@ -10,23 +10,23 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-if(!fs.existsSync("./audio")){
+if (!fs.existsSync("./audio")) {
 fs.mkdirSync("./audio");
 }
 
-app.use("/audio",express.static("./audio"));
+app.use("/audio", express.static("./audio"));
 
 const openai = new OpenAI({
-apiKey:process.env.OPENAI_API_KEY
+apiKey: process.env.OPENAI_API_KEY
 });
 
 /* CHATWOOT */
 
-const CHATWOOT_URL="https://drhm.up.railway.app";
-const CHATWOOT_ACCOUNT_ID="2";
-const CHATWOOT_TOKEN="K4iNRKnchfhA2TcmQC1itzzb";
+const CHATWOOT_URL = "https://drhm.up.railway.app";
+const CHATWOOT_ACCOUNT_ID = "2";
+const CHATWOOT_TOKEN = "K4iNRKnchfhA2TcmQC1itzzb";
 
-const conversations={};
+const conversations = {};
 
 /* DATA BRASIL */
 
@@ -58,10 +58,13 @@ month:"long"
 
 async function downloadAudio(url){
 
-const response=await axios({
+const response = await axios({
 url,
 method:"GET",
-responseType:"stream"
+responseType:"stream",
+headers:{
+api_access_token: CHATWOOT_TOKEN
+}
 });
 
 const path="./audio/input.ogg";
@@ -72,40 +75,37 @@ response.data.pipe(writer);
 return new Promise(resolve=>{
 writer.on("finish",()=>resolve(path));
 });
-
 }
 
 /* TRANSCRIÇÃO */
 
 async function transcribeAudio(path){
 
-const transcription=await openai.audio.transcriptions.create({
+const transcription = await openai.audio.transcriptions.create({
 file:fs.createReadStream(path),
 model:"gpt-4o-transcribe"
 });
 
 return transcription.text;
-
 }
 
 /* GERAR VOZ */
 
 async function generateVoice(text){
 
-const speech=await openai.audio.speech.create({
+const speech = await openai.audio.speech.create({
 model:"gpt-4o-mini-tts",
 voice:"nova",
 input:text
 });
 
-const buffer=Buffer.from(await speech.arrayBuffer());
+const buffer = Buffer.from(await speech.arrayBuffer());
 
 const path="./audio/reply.mp3";
 
 fs.writeFileSync(path,buffer);
 
 return path;
-
 }
 
 /* ENVIAR TEXTO */
@@ -120,11 +120,10 @@ message_type:"outgoing"
 },
 {
 headers:{
-api_access_token:CHATWOOT_TOKEN
+api_access_token: CHATWOOT_TOKEN
 }
 }
 );
-
 }
 
 /* ENVIAR AUDIO */
@@ -141,12 +140,11 @@ await axios.post(
 form,
 {
 headers:{
-api_access_token:CHATWOOT_TOKEN,
+api_access_token: CHATWOOT_TOKEN,
 ...form.getHeaders()
 }
 }
 );
-
 }
 
 /* FOLLOW UP */
@@ -158,9 +156,9 @@ const interaction=user.lastInteraction;
 
 setTimeout(async()=>{
 
-if(!conversations[conversationId])return;
+if(!conversations[conversationId]) return;
 
-if(conversations[conversationId].lastInteraction!==interaction)return;
+if(conversations[conversationId].lastInteraction!==interaction) return;
 
 await sendChatwootText(conversationId,
 `Vi que você estava vendo sobre procedimentos estéticos.
@@ -171,14 +169,13 @@ Posso reservar esse horário para você?`
 );
 
 },10*60*1000);
-
 }
 
 /* IA */
 
 async function aiReply(history,nextDateText){
 
-const completion=await openai.chat.completions.create({
+const completion = await openai.chat.completions.create({
 
 model:"gpt-4o-mini",
 
@@ -186,28 +183,24 @@ messages:[
 {
 role:"system",
 content:`
+
 Você é a assistente da clínica do Dr Henrique Mafra.
 
 Atenda de forma profissional e natural.
 
-Fluxo da conversa:
-
 1 Cumprimente o paciente.
-
-2 Pergunte qual procedimento ele deseja avaliar.
-
-3 Explique que é necessário avaliação.
-
+2 Pergunte qual procedimento deseja avaliar.
+3 Explique que é necessária avaliação.
 4 Ofereça agendamento.
 
 "O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
 
-Se perguntarem valores:
-
-"A consulta de avaliação tem valor de R$150 e caso realize o procedimento esse valor é abatido."
+Valor da avaliação:
+"A consulta custa R$150 e é abatida se realizar o procedimento."
 
 Nunca usar emojis.
 Respostas curtas.
+
 `
 },
 ...history
@@ -216,14 +209,21 @@ Respostas curtas.
 });
 
 return completion.choices[0].message.content;
-
 }
 
-/* WEBHOOK CHATWOOT */
+/* WEBHOOK */
 
 app.post("/chatwoot",async(req,res)=>{
 
 try{
+
+const senderType=req.body.sender?.type;
+
+/* RESPONDER APENAS PACIENTE */
+
+if(senderType!=="contact"){
+return res.sendStatus(200);
+}
 
 if(req.body.message_type!=="incoming"){
 return res.sendStatus(200);
@@ -240,7 +240,7 @@ let isAudio=false;
 
 /* DETECTAR AUDIO */
 
-const attachments=req.body.attachments || [];
+const attachments=req.body.message?.attachments || [];
 
 if(attachments.length>0){
 
@@ -256,16 +256,14 @@ isAudio=true;
 const path=await downloadAudio(audioUrl);
 
 message=await transcribeAudio(path);
-
 }
-
 }
 
 if(!message){
 return res.sendStatus(200);
 }
 
-/* MEMORIA */
+/* MEMÓRIA */
 
 if(!conversations[conversationId]){
 
@@ -273,13 +271,13 @@ conversations[conversationId]={
 history:[],
 lastInteraction:Date.now()
 };
-
 }
 
 const user=conversations[conversationId];
+
 user.lastInteraction=Date.now();
 
-/* HISTORICO */
+/* HISTÓRICO */
 
 user.history.push({
 role:"user",
@@ -306,7 +304,6 @@ await sendChatwootAudio(conversationId,voice);
 }else{
 
 await sendChatwootText(conversationId,reply);
-
 }
 
 scheduleFollowUps(user,conversationId);
@@ -316,10 +313,9 @@ res.sendStatus(200);
 }catch(err){
 
 console.log(err);
+
 res.sendStatus(500);
-
 }
-
 });
 
 const PORT=process.env.PORT||8080;
