@@ -183,14 +183,23 @@ Pergunte o procedimento.
 Explique brevemente.
 
 Procedimentos:
-Botox
-Preenchimento facial
-Bioestimuladores
-Melasma
-Flacidez
-Lipo de papada
+Toxina botulínica
+HIFU
+Fios de PDO
+Preenchimento
+Redução de medidas
+Bioestimulador de colágeno
+Blefaroplastia sem corte
+Remoção de vasinhos
 Remoção de verrugas
-Remoção de tatuagem
+Lipo de papada sem corte
+Terapia ortomolecular
+Tratamento da hiperidrose
+Tratamento de melasma
+Rinomodelação não cirúrgica
+Lobuloplastia
+Pescoço de boneca
+Harmonização das mãos
 
 Instagram:
 ${INSTAGRAM}
