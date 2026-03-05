@@ -25,13 +25,25 @@ const conversations = {};
 
 let adminTarget = null;
 
+function normalizeNumber(num){
+
+num = num.replace("@","").replace("+","").trim();
+
+if(!num.startsWith("55")){
+num = "55"+num;
+}
+
+return "whatsapp:+"+num;
+
+}
+
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
 function nextAvailableDate(){
 
-let d = getBrazilDate();
+let d=getBrazilDate();
 
 d.setDate(d.getDate()+5);
 
@@ -160,7 +172,7 @@ Fluxo da conversa:
 Exemplo:
 "Qual procedimento você gostaria de avaliar?"
 
-3 Explique que é necessário uma avaliação.
+3 Explique que é necessário avaliação.
 
 4 Ofereça agendamento.
 
@@ -193,7 +205,9 @@ try{
 
 const from=req.body.From;
 
-if(from===CLINIC_PHONE) return res.sendStatus(200);
+if(from===CLINIC_PHONE){
+return res.sendStatus(200);
+}
 
 let message=req.body.Body || "";
 
@@ -203,11 +217,7 @@ if(from===ADMIN_PHONE){
 
 if(message.startsWith("@")){
 
-let phone=message.replace("@","").trim();
-
-if(!phone.startsWith("55")) phone="55"+phone;
-
-adminTarget="whatsapp:+"+phone;
+adminTarget = normalizeNumber(message);
 
 await sendWhatsAppMessage(ADMIN_PHONE,"Paciente selecionado.");
 
@@ -217,11 +227,7 @@ return res.sendStatus(200);
 
 if(message.startsWith("#ia")){
 
-let phone=message.replace("#ia","").trim();
-
-if(!phone.startsWith("55")) phone="55"+phone;
-
-phone="whatsapp:+"+phone;
+let phone = normalizeNumber(message.replace("#ia",""));
 
 if(conversations[phone]){
 conversations[phone].iaAtiva=true;
@@ -289,7 +295,9 @@ Mensagem:
 ${message}`
 );
 
-if(!user.iaAtiva) return res.sendStatus(200);
+if(!user.iaAtiva){
+return res.sendStatus(200);
+}
 
 user.history.push({role:"user",content:message});
 
