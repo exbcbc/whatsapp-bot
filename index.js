@@ -1,41 +1,61 @@
-import express from "express"
-import dotenv from "dotenv"
-import axios from "axios"
-import fs from "fs"
-import OpenAI from "openai"
+import express from "express";
+import OpenAI from "openai";
+import dotenv from "dotenv";
+import axios from "axios";
+import fs from "fs";
 
-dotenv.config()
+dotenv.config();
 
-const app=express()
+const app = express();
 
-app.use(express.urlencoded({extended:true}))
-app.use(express.json())
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
-const openai=new OpenAI({
-apiKey:process.env.OPENAI_API_KEY
-})
+/* AUDIO FOLDER */
 
-const CLINIC_PHONE="whatsapp:+SEU_NUMERO_TWILIO"
+if (!fs.existsSync("./audio")) {
+fs.mkdirSync("./audio");
+}
 
-const conversations={}
+app.use("/audio", express.static("./audio"));
 
-/* DATA */
+/* OPENAI */
 
-function getBrazilDate(){
-return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}))
+const openai = new OpenAI({
+apiKey: process.env.OPENAI_API_KEY
+});
+
+/* TWILIO */
+
+const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
+
+/* CHATWOOT */
+
+const CHATWOOT_URL = "https://drhm.up.railway.app";
+const CHATWOOT_ACCOUNT = "2";
+const CHATWOOT_TOKEN = "K4iNRKnchfhA2TcmQC1itzzb";
+
+/* MEMORY */
+
+const conversations = {};
+
+/* DATA BRASIL */
+
+function getBrazilDate() {
+return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
 function nextAvailableDate(){
 
-let d=getBrazilDate()
+let d=getBrazilDate();
 
-d.setDate(d.getDate()+5)
+d.setDate(d.getDate()+5);
 
 while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
-d.setDate(d.getDate()+1)
+d.setDate(d.getDate()+1);
 }
 
-return d
+return d;
 }
 
 function formatDate(date){
@@ -44,11 +64,11 @@ return date.toLocaleDateString("pt-BR",{
 weekday:"long",
 day:"numeric",
 month:"long"
-})
+});
 
 }
 
-/* BAIXAR AUDIO */
+/* BAIXAR AUDIO TWILIO */
 
 async function downloadAudio(url){
 
@@ -60,30 +80,31 @@ auth:{
 username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
-})
+});
 
-const path="./audio.ogg"
+const path="./audio/input.ogg";
 
-const writer=fs.createWriteStream(path)
+const writer=fs.createWriteStream(path);
 
-response.data.pipe(writer)
+response.data.pipe(writer);
 
 return new Promise(resolve=>{
-writer.on("finish",()=>resolve(path))
-})
+writer.on("finish",()=>resolve(path));
+});
 
 }
 
 /* TRANSCRIÇÃO */
 
-async function transcribe(path){
+async function transcribeAudio(path){
 
 const transcription=await openai.audio.transcriptions.create({
 file:fs.createReadStream(path),
 model:"gpt-4o-transcribe"
-})
+});
 
-return transcription.text
+return transcription.text;
+
 }
 
 /* GERAR VOZ */
@@ -94,11 +115,37 @@ const speech=await openai.audio.speech.create({
 model:"gpt-4o-mini-tts",
 voice:"nova",
 input:text
-})
+});
 
-const buffer=Buffer.from(await speech.arrayBuffer())
+const buffer=Buffer.from(await speech.arrayBuffer());
 
-fs.writeFileSync("./reply.mp3",buffer)
+const path="./audio/reply.mp3";
+
+fs.writeFileSync(path,buffer);
+
+return path;
+
+}
+
+/* CHATWOOT LOG */
+
+async function logChatwoot(phone,message){
+
+try{
+
+await axios.post(
+`${CHATWOOT_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT}/contacts`,
+{
+phone_number:phone
+},
+{
+headers:{
+api_access_token:CHATWOOT_TOKEN
+}
+}
+);
+
+}catch(e){}
 
 }
 
@@ -115,55 +162,66 @@ messages:[
 role:"system",
 content:`
 
-Você é a assistente da clínica estética do Dr Henrique Mafra.
+Você é a assistente da clínica do Dr Henrique Mafra.
 
-Seu objetivo é:
+Atenda de forma profissional e natural.
 
-1 cumprimentar o paciente
-2 perguntar qual procedimento deseja avaliar
-3 explicar que é necessária avaliação
-4 oferecer horário
+Fluxo da conversa:
 
-exemplo:
+1 Cumprimente o paciente.
 
-"O próximo horário disponível é ${nextDateText} às 19h30. Posso reservar para você?"
+2 Pergunte qual procedimento deseja avaliar.
 
-Valor da avaliação:
+3 Explique que é necessária avaliação.
+
+4 Ofereça horário.
+
+"O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário?"
+
+Valor:
 
 "A consulta custa R$150 e é abatida se realizar o procedimento."
 
-Respostas curtas.
-
 Nunca usar emojis.
+
+Respostas curtas.
 
 `
 },
 ...history
 ]
 
-})
+});
 
-return completion.choices[0].message.content
+return completion.choices[0].message.content;
+
 }
 
-/* TWILIO */
+/* TWILIO WEBHOOK */
 
 app.post("/whatsapp",async(req,res)=>{
 
 try{
 
-const from=req.body.From
-let message=req.body.Body || ""
+const from=req.body.From;
 
-const hasAudio=req.body.NumMedia && req.body.NumMedia>0
+let message=req.body.Body || "";
 
-if(hasAudio){
+const numMedia=parseInt(req.body.NumMedia || 0);
 
-const audioUrl=req.body.MediaUrl0
+let isAudio=false;
 
-const path=await downloadAudio(audioUrl)
+/* AUDIO */
 
-message=await transcribe(path)
+if(numMedia>0){
+
+const mediaUrl=req.body.MediaUrl0;
+
+isAudio=true;
+
+const path=await downloadAudio(mediaUrl);
+
+message=await transcribeAudio(path);
 
 }
 
@@ -172,65 +230,77 @@ message=await transcribe(path)
 if(!conversations[from]){
 
 conversations[from]={
+
 history:[]
-}
+
+};
 
 }
 
-const user=conversations[from]
+const user=conversations[from];
 
 user.history.push({
 role:"user",
 content:message
-})
+});
 
-const nextDateText=formatDate(nextAvailableDate())
+/* CHATWOOT LOG */
 
-const reply=await aiReply(user.history,nextDateText)
+await logChatwoot(from,message);
+
+/* IA */
+
+const nextDateText=formatDate(nextAvailableDate());
+
+const reply=await aiReply(user.history,nextDateText);
 
 user.history.push({
 role:"assistant",
 content:reply
-})
+});
 
-/* AUDIO */
+/* AUDIO RESPONSE */
 
-if(hasAudio){
+if(isAudio){
 
-await generateVoice(reply)
+await generateVoice(reply);
 
 return res.type("text/xml").send(`
 <Response>
 <Message>
-<Media>${process.env.DOMAIN}/reply.mp3</Media>
+<Media>${DOMAIN}/audio/reply.mp3</Media>
 </Message>
 </Response>
-`)
+`);
 
 }
 
-/* TEXTO */
+/* TEXT RESPONSE */
 
 res.type("text/xml").send(`
 <Response>
 <Message>${reply}</Message>
 </Response>
-`)
+`);
 
 }catch(err){
 
-console.log(err)
+console.log(err);
 
 res.type("text/xml").send(`
 <Response>
-<Message>Erro no servidor</Message>
+<Message>Erro no servidor.</Message>
 </Response>
-`)
+`);
 
 }
 
-})
+});
 
-app.listen(8080,()=>{
-console.log("BOT rodando")
-})
+/* SERVER */
+
+const PORT=process.env.PORT||8080;
+
+app.listen(PORT,()=>{
+console.log("Servidor rodando");
+});
