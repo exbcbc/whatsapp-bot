@@ -19,7 +19,7 @@ apiKey: process.env.OPENAI_API_KEY
 const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
 const CLINIC_PHONE="whatsapp:+554731700136";
-const ADMIN_PHONE="whatsapp:+5547991812557";
+const ADMIN_PHONE="whatsapp:+554791812557";
 
 const conversations={};
 
