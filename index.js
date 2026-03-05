@@ -165,21 +165,21 @@ Você é a assistente da clínica do Dr Henrique Mafra.
 
 Atenda de forma profissional e natural.
 
-Fluxo da conversa:
+Fluxo:
 
-1 Cumprimente o paciente.
+Cumprimente o paciente.
 
-2 Pergunte qual procedimento ele deseja avaliar.
+Pergunte qual procedimento ele deseja avaliar.
 
-3 Explique que é necessário avaliação.
+Explique que é necessária uma avaliação.
 
-4 Ofereça agendamento.
+Ofereça horário:
 
-"O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
+"O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário?"
 
 Se perguntarem valores:
 
-"A consulta de avaliação tem valor de R$150 e caso realize o procedimento esse valor é abatido."
+"A consulta de avaliação custa R$150 e se fizer o procedimento o valor é abatido."
 
 Nunca usar emojis.
 
@@ -207,51 +207,52 @@ if(from===CLINIC_PHONE){
 return res.sendStatus(200);
 }
 
-let message=body;
-
 const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
+
+let message=body;
 
 /* ADMIN */
 
 if(from===ADMIN_PHONE){
 
-if(message.startsWith("@")){
+const command=message.trim();
 
-adminTarget=normalizeNumber(message);
+// selecionar paciente
+if(command.startsWith("@")){
 
-await sendWhatsAppMessage(ADMIN_PHONE,"Paciente selecionado.");
+adminTarget=normalizeNumber(command);
+
+console.log("Paciente selecionado:",adminTarget);
 
 return res.sendStatus(200);
 
 }
 
-if(message.startsWith("#ia")){
+// reativar IA
+if(command.startsWith("#ia")){
 
-let phone=normalizeNumber(message.replace("#ia",""));
+let phone=normalizeNumber(command.replace("#ia",""));
 
 if(conversations[phone]){
 conversations[phone].iaAtiva=true;
 }
 
-await sendWhatsAppMessage(ADMIN_PHONE,"IA reativada.");
-
 return res.sendStatus(200);
 
 }
 
+// enviar mensagem manual
 if(adminTarget){
 
 if(hasAudio){
 
 const mediaUrl=req.body.MediaUrl0;
 
-const path=await downloadAudio(mediaUrl);
-
-await sendWhatsAppMedia(adminTarget,`${DOMAIN}/audio/input.ogg`);
+await sendWhatsAppMedia(adminTarget,mediaUrl);
 
 }else{
 
-await sendWhatsAppMessage(adminTarget,message);
+await sendWhatsAppMessage(adminTarget,command);
 
 }
 
@@ -262,6 +263,8 @@ conversations[adminTarget].iaAtiva=false;
 return res.sendStatus(200);
 
 }
+
+return res.sendStatus(200);
 
 }
 
@@ -282,9 +285,9 @@ if(hasAudio){
 
 const mediaUrl=req.body.MediaUrl0;
 
-const path=await downloadAudio(mediaUrl);
+await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
 
-await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
+const path=await downloadAudio(mediaUrl);
 
 message=await transcribeAudio(path);
 
@@ -331,7 +334,7 @@ res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
 console.log(err);
 
-res.type("text/xml").send(`<Response><Message>Erro no servidor.</Message></Response>`);
+res.type("text/xml").send(`<Response><Message>Erro no servidor</Message></Response>`);
 
 }
 
