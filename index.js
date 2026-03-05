@@ -273,12 +273,15 @@ ${message}`);
 
 if(isExistingPatient(message)){
 
-await sendWhatsAppMessage(from,`
+const reply=`
 Perfeito vou avisar o Dr Henrique Mafra.
 
 Telefone:
 ${DOCTOR_PHONE}
-`);
+`;
+
+await sendWhatsAppMessage(from,reply);
+await sendWhatsAppMessage(ADMIN_PHONE,reply);
 
 return;
 }
@@ -294,12 +297,12 @@ if(hasAudio){
 const audioUrl=await generateVoice(reply);
 
 await sendWhatsAppMedia(from,audioUrl);
-
 await sendWhatsAppMedia(ADMIN_PHONE,audioUrl);
 
 }else{
 
 await sendWhatsAppMessage(from,reply);
+await sendWhatsAppMessage(ADMIN_PHONE,reply);
 
 }
 
