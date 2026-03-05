@@ -29,7 +29,7 @@ function nextAvailableDate(){
 
 let d=getBrazilDate();
 
-d.setDate(d.getDate()+2);
+d.setDate(d.getDate()+5);
 
 while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
 d.setDate(d.getDate()+1);
@@ -204,21 +204,33 @@ if(user.followupsScheduled) return;
 
 user.followupsScheduled=true;
 
+const nextDateText=formatDate(nextAvailableDate());
+
 setTimeout(()=>{
 sendWhatsAppMessage(phone,
-"Vi que você estava vendo sobre o procedimento. O próximo horário disponível é às 19h30. Posso reservar para você?"
+`Vi que você estava vendo sobre o procedimento.
+
+O próximo horário disponível é ${nextDateText} às 19h30.
+
+Posso reservar esse horário para você?`
 );
 },10*60*1000);
 
 setTimeout(()=>{
 sendWhatsAppMessage(phone,
-"A agenda do Dr Henrique Mafra costuma ficar concorrida. Posso verificar um horário de avaliação para você às 19h30?"
+`A agenda do Dr Henrique Mafra costuma ficar concorrida.
+
+Ainda tenho disponível ${nextDateText} às 19h30.
+
+Posso garantir esse horário para você?`
 );
 },2*60*60*1000);
 
 setTimeout(()=>{
 sendWhatsAppMessage(phone,
-"Alguns horários desta semana já foram preenchidos. Se quiser posso garantir sua avaliação antes que a agenda feche."
+`Alguns horários desta semana já foram preenchidos.
+
+Se quiser, ainda posso reservar ${nextDateText} às 19h30 para sua avaliação.`
 );
 },24*60*60*1000);
 
@@ -240,29 +252,21 @@ Você é a assistente da clínica do Dr Henrique Mafra.
 
 Seu objetivo é converter o paciente em agendamento.
 
-REGRAS:
-
 Sempre ofereça primeiro o próximo dia disponível às 19h30.
 
 Use este formato:
 
 "O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
 
-Nunca listar vários horários.
-
-Se a pessoa perguntar valores:
+Se perguntarem valores:
 
 Explique que cada caso precisa de avaliação.
 
-Diga:
+"A consulta de avaliação tem valor de R$150. Caso realize o procedimento no mesmo dia esse valor é abatido."
 
-"A consulta de avaliação tem o valor de R$150. Caso você realize o procedimento no mesmo dia esse valor é abatido do procedimento. Caso não realize, esse é apenas o valor da consulta."
+Sempre conduza novamente para o agendamento.
 
-Depois conduza novamente para o agendamento.
-
-Se o paciente demonstrar interesse sempre conduza para agendar.
-
-Respostas curtas, naturais e profissionais.
+Respostas curtas e profissionais.
 
 Nunca usar emojis.
 
@@ -356,17 +360,17 @@ if(hasAudio){
 
 await generateVoice(reply);
 
-return res.type("text/xml").send(`<Response> <Message> <Media>${DOMAIN}/audio/reply.mp3</Media> </Message> </Response>`);
+return res.type("text/xml").send(`<Response><Message><Media>${DOMAIN}/audio/reply.mp3</Media></Message></Response>`);
 
 }
 
-res.type("text/xml").send(`<Response> <Message>${reply}</Message> </Response>`);
+res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
 }catch(err){
 
 console.log(err);
 
-res.type("text/xml").send(`<Response> <Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message> </Response>`);
+res.type("text/xml").send(`<Response><Message>Ocorreu uma instabilidade. Pode enviar novamente?</Message></Response>`);
 
 }
 
