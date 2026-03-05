@@ -16,21 +16,21 @@ const openai = new OpenAI({
 apiKey: process.env.OPENAI_API_KEY
 });
 
-const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
+const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
-const CLINIC_PHONE = "whatsapp:+554731700136";
-const ADMIN_PHONE = "whatsapp:+5547991812557";
+const CLINIC_PHONE="whatsapp:+554731700136";
+const ADMIN_PHONE="whatsapp:+5547991812557";
 
-const conversations = {};
+const conversations={};
 
-let adminTarget = null;
+let adminTarget=null;
 
 function normalizeNumber(num){
 
-num = num.replace("@","").replace("+","").trim();
+num=num.replace("@","").replace("+","").trim();
 
 if(!num.startsWith("55")){
-num = "55"+num;
+num="55"+num;
 }
 
 return "whatsapp:+"+num;
@@ -136,6 +136,8 @@ return transcription.text;
 
 async function generateVoice(text){
 
+text=text.replace(/\./g,"... ");
+
 const speech=await openai.audio.speech.create({
 model:"gpt-4o-mini-tts",
 voice:"nova",
@@ -169,14 +171,9 @@ Fluxo da conversa:
 
 2 Pergunte qual procedimento ele deseja avaliar.
 
-Exemplo:
-"Qual procedimento você gostaria de avaliar?"
-
-3 Explique que é necessário uma avaliação.
+3 Explique que é necessário avaliação.
 
 4 Ofereça agendamento.
-
-Formato:
 
 "O próximo dia disponível é ${nextDateText} às 19h30. Posso reservar esse horário para você?"
 
@@ -204,12 +201,13 @@ app.post("/whatsapp",async(req,res)=>{
 try{
 
 const from=req.body.From;
+const to=req.body.To;
 
 if(from===CLINIC_PHONE){
 return res.sendStatus(200);
 }
 
-let message=req.body.Body || "";
+let message=req.body.Body||"";
 
 const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
 
@@ -217,7 +215,7 @@ if(from===ADMIN_PHONE){
 
 if(message.startsWith("@")){
 
-adminTarget = normalizeNumber(message);
+adminTarget=normalizeNumber(message);
 
 await sendWhatsAppMessage(ADMIN_PHONE,"Paciente selecionado.");
 
@@ -227,7 +225,7 @@ return res.sendStatus(200);
 
 if(message.startsWith("#ia")){
 
-let phone = normalizeNumber(message.replace("#ia",""));
+let phone=normalizeNumber(message.replace("#ia",""));
 
 if(conversations[phone]){
 conversations[phone].iaAtiva=true;
@@ -245,7 +243,9 @@ if(hasAudio){
 
 const mediaUrl=req.body.MediaUrl0;
 
-await sendWhatsAppMedia(adminTarget,mediaUrl);
+const path=await downloadAudio(mediaUrl);
+
+await sendWhatsAppMedia(adminTarget,`${DOMAIN}/audio/input.ogg`);
 
 }else{
 
@@ -280,7 +280,7 @@ const mediaUrl=req.body.MediaUrl0;
 
 const path=await downloadAudio(mediaUrl);
 
-await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
 
 message=await transcribeAudio(path);
 
@@ -309,7 +309,6 @@ if(hasAudio){
 
 await generateVoice(reply);
 
-// ENVIA ÁUDIO DA IA PARA VOCÊ
 await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
 
 return res.type("text/xml").send(`
@@ -334,7 +333,7 @@ res.type("text/xml").send(`<Response><Message>Erro no servidor.</Message></Respo
 
 });
 
-const PORT=process.env.PORT || 8080;
+const PORT=process.env.PORT||8080;
 
 app.listen(PORT,()=>{
 console.log("Servidor rodando");
