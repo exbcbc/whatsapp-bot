@@ -17,33 +17,39 @@ apiKey: process.env.OPENAI_API_KEY
 });
 
 const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
-const SHEET_API="https://sheetdb.io/api/v1/wgkxf59rp8phz";
 
 const CLINIC_PHONE="whatsapp:+554731700136";
 const ADMIN_PHONE="whatsapp:+5547991812557";
 
 const conversations={};
 
+let adminTarget=null;
+
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
 function nextAvailableDate(){
+
 let d=getBrazilDate();
+
 d.setDate(d.getDate()+5);
-while(d.getDay()===0||d.getDay()===1||d.getDay()===6){
+
+while(d.getDay()===0 || d.getDay()===1 || d.getDay()===6){
 d.setDate(d.getDate()+1);
 }
+
 return d;
 }
 
 function formatDate(date){
+
 return date.toLocaleDateString("pt-BR",{
 weekday:"long",
 day:"numeric",
-month:"long",
-year:"numeric"
+month:"long"
 });
+
 }
 
 function detectProcedure(msg){
@@ -57,25 +63,6 @@ if(t.includes("melasma")) return "melasma";
 if(t.includes("flacidez")) return "bioestimulador";
 
 return "";
-
-}
-
-async function salvarLead(nome,telefone,procedimento,lead){
-
-try{
-
-await axios.post(SHEET_API,{
-data:[{
-data:new Date().toLocaleDateString("pt-BR"),
-nome:nome||"",
-telefone,
-procedimento,
-lead,
-status:"lead"
-}]
-});
-
-}catch(e){}
 
 }
 
@@ -191,7 +178,8 @@ const completion=await openai.chat.completions.create({
 
 model:"gpt-4o-mini",
 
-messages:[{
+messages:[
+{
 role:"system",
 content:`
 
@@ -208,7 +196,7 @@ Fluxo da conversa:
 Exemplo:
 "Qual procedimento você gostaria de avaliar?"
 
-3 Explique que é necessário uma avaliação.
+3 Explique que é necessário avaliação.
 
 4 Ofereça agendamento.
 
@@ -226,7 +214,8 @@ Respostas curtas.
 
 `
 },
-...history]
+...history
+]
 
 });
 
@@ -239,7 +228,7 @@ app.post("/whatsapp",async(req,res)=>{
 try{
 
 const from=req.body.From;
-let message=req.body.Body||"";
+let message=req.body.Body || "";
 
 const hasAudio=req.body.NumMedia && req.body.NumMedia>0;
 
@@ -247,17 +236,9 @@ if(from===ADMIN_PHONE){
 
 if(message.startsWith("@")){
 
-const parts=message.split("\n");
+adminTarget="whatsapp:+"+message.replace("@","").trim();
 
-const phone="whatsapp:+"+parts[0].replace("@","").trim();
-
-const text=parts.slice(1).join("\n");
-
-await sendWhatsAppMessage(phone,text);
-
-if(conversations[phone]){
-conversations[phone].iaAtiva=false;
-}
+await sendWhatsAppMessage(ADMIN_PHONE,"Paciente selecionado");
 
 return res.sendStatus(200);
 
@@ -272,6 +253,30 @@ conversations[phone].iaAtiva=true;
 }
 
 await sendWhatsAppMessage(ADMIN_PHONE,"IA reativada");
+
+return res.sendStatus(200);
+
+}
+
+if(adminTarget){
+
+if(hasAudio){
+
+const mediaUrl=req.body.MediaUrl0;
+
+const path=await downloadAudio(mediaUrl);
+
+await sendWhatsAppMedia(adminTarget,`${DOMAIN}/audio/input.ogg`);
+
+}else{
+
+await sendWhatsAppMessage(adminTarget,message);
+
+}
+
+if(conversations[adminTarget]){
+conversations[adminTarget].iaAtiva=false;
+}
 
 return res.sendStatus(200);
 
@@ -300,20 +305,18 @@ const mediaUrl=req.body.MediaUrl0;
 
 const path=await downloadAudio(mediaUrl);
 
-await sendWhatsAppMessage(ADMIN_PHONE,`Paciente enviou áudio: ${from}`);
 await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/input.ogg`);
 
 message=await transcribeAudio(path);
 
 }
 
-const procedure=detectProcedure(message);
-if(procedure)user.procedimento=procedure;
-
-await sendWhatsAppMessage(ADMIN_PHONE,`Paciente: ${from}
+await sendWhatsAppMessage(ADMIN_PHONE,
+`Paciente: ${from}
 
 Mensagem:
-${message}`);
+${message}`
+);
 
 if(!user.iaAtiva)return res.sendStatus(200);
 
@@ -331,17 +334,15 @@ if(hasAudio){
 
 await generateVoice(reply);
 
-await sendWhatsAppMessage(ADMIN_PHONE,"IA respondeu em áudio");
-
 await sendWhatsAppMedia(ADMIN_PHONE,`${DOMAIN}/audio/reply.mp3`);
 
-return res.type("text/xml").send(
-`<Response>
+return res.type("text/xml").send(`
+<Response>
 <Message>
 <Media>${DOMAIN}/audio/reply.mp3</Media>
 </Message>
-</Response>`
-);
+</Response>
+`);
 
 }
 
@@ -351,7 +352,7 @@ res.type("text/xml").send(`<Response><Message>${reply}</Message></Response>`);
 
 console.log(err);
 
-res.type("text/xml").send(`<Response><Message>Ocorreu uma instabilidade.</Message></Response>`);
+res.type("text/xml").send(`<Response><Message>Erro no servidor.</Message></Response>`);
 
 }
 
