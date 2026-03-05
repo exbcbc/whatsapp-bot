@@ -19,11 +19,8 @@ apiKey: process.env.OPENAI_API_KEY
 const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
 const CLINIC_PHONE="whatsapp:+554731700136";
-const ADMIN_PHONE="whatsapp:+5547991812557";
 
 const conversations={};
-
-let adminTarget=null;
 
 function getBrazilDate(){
 return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
@@ -209,6 +206,10 @@ return completion.choices[0].message.content;
 
 }
 
+/* ============================= */
+/* ROTA TWILIO WHATSAPP */
+/* ============================= */
+
 app.post("/whatsapp",async(req,res)=>{
 
 try{
@@ -280,13 +281,15 @@ res.type("text/xml").send(`<Response><Message>Erro no servidor.</Message></Respo
 
 });
 
-/* ROTA PARA CHATWOOT */
+/* ============================= */
+/* ROTA CHATWOOT */
+/* ============================= */
 
 app.post("/chatwoot",async(req,res)=>{
 
 try{
 
-const message=req.body.message;
+const message=req.body.content || req.body.message || "";
 
 if(!message){
 return res.sendStatus(200);
