@@ -59,7 +59,7 @@ month:"long"
 
 }
 
-/* DOWNLOAD AUDIO CHATWOOT */
+/* DOWNLOAD AUDIO */
 
 async function downloadAudio(url){
 
@@ -112,7 +112,7 @@ return "./audio/reply.mp3";
 
 }
 
-/* ENVIAR TEXTO CHATWOOT */
+/* ENVIAR TEXTO */
 
 async function sendChatwootText(conversationId,text){
 
@@ -131,7 +131,7 @@ api_access_token:CHATWOOT_TOKEN
 
 }
 
-/* ENVIAR AUDIO CHATWOOT */
+/* ENVIAR AUDIO */
 
 async function sendChatwootAudio(conversationId,filePath){
 
@@ -182,6 +182,8 @@ Posso reservar esse horário para você?`
 
 async function aiReply(history,nextDateText){
 
+try{
+
 const completion=await openai.chat.completions.create({
 
 model:"gpt-4o-mini",
@@ -229,6 +231,14 @@ Respostas curtas.
 
 return completion.choices[0].message.content;
 
+}catch(err){
+
+console.log("Erro IA",err);
+
+return "Olá! Como posso ajudar você hoje?";
+
+}
+
 }
 
 /* ROTA CHATWOOT */
@@ -237,6 +247,12 @@ app.post("/chatwoot",async(req,res)=>{
 
 try{
 
+/* EVITAR LOOP */
+
+if(req.body.message_type !== "incoming"){
+return res.sendStatus(200);
+}
+
 const conversationId=req.body.conversation?.id;
 
 if(!conversationId){
@@ -244,24 +260,31 @@ return res.sendStatus(200);
 }
 
 let message=req.body.content || "";
-
 let isAudio=false;
 
 /* DETECTAR AUDIO */
 
 if(!message && req.body.attachments?.length>0){
 
+const attachment=req.body.attachments[0];
+
+if(attachment.data_url){
+
 isAudio=true;
 
-const audioUrl=req.body.attachments[0].data_url;
-
-const path=await downloadAudio(audioUrl);
+const path=await downloadAudio(attachment.data_url);
 
 message=await transcribeAudio(path);
 
 }
 
-/* CRIAR CONVERSA */
+}
+
+if(!message){
+return res.sendStatus(200);
+}
+
+/* CRIAR MEMORIA */
 
 if(!conversations[conversationId]){
 
@@ -292,7 +315,7 @@ role:"assistant",
 content:reply
 });
 
-/* SE FOI AUDIO */
+/* RESPOSTA */
 
 if(isAudio){
 
