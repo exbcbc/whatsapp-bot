@@ -25,12 +25,12 @@ const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
 const CLINIC_PHONE="whatsapp:+554731700136";
 const ADMIN_PHONE="whatsapp:+5547991812557";
-const INSTAGRAM="https://instagram.com/drhenriquemafra";
+const INSTAGRAM="@drhenriquemafra";
 
 const CLINIC_ADDRESS=`
 Clínica WF
-Rua 981, nº 196
-Centro – Balneário Camboriú – SC
+Rua 981, Número 196 bairro,
+Centro em Balneário Camboriú, Santa Catarina
 `;
 
 const DOCTOR_PHONE="47 99188-6417";
@@ -171,7 +171,7 @@ messages:[
 role:"system",
 content:`
 
-Você é a assistente virtual da clínica do Dr Henrique Mafra, especialista em estética avançada.
+Você é a IAra a assistente virtual do Dr Henrique Mafra, especialista em estética avançada.
 
 Seu objetivo é atender pacientes de forma natural, educada e humanizada e conduzir a conversa até o agendamento da consulta.
 
@@ -180,12 +180,12 @@ Fluxo do atendimento:
 1 Cumprimente o paciente.
 
 Exemplo:
-"Olá, seja bem-vindo à clínica do Dr Henrique Mafra. É um prazer falar com você."
+"Olá, seja bem-vindo do Dr Henrique Mafra. É um prazer falar com você."
 
-2 Pergunte qual procedimento o paciente deseja avaliar.
+2 Pergunte qual procedimento o paciente deseja fazer ou saber mais.
 
 Exemplo:
-"Como posso ajudar você hoje? Qual procedimento você gostaria de avaliar?"
+"Como posso ajudar você hoje? Qual procedimento você gostaria ?"
 
 3 Quando o paciente mencionar um procedimento, explique brevemente.
 
