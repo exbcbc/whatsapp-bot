@@ -213,6 +213,17 @@ Horários:
 ${formatDate(dates[0])} às 19h30
 ${formatDate(dates[1])} às 19h30
 ${formatDate(dates[2])} às 19h30
+Sempre ofereça primeiro os horários das 19h30.
+
+Caso o paciente diga que NÃO pode às 19h30:
+Explique que é possível verificar uma exceção no período da tarde.
+
+Pergunte:
+"Qual seria o melhor horário para você no período da tarde?"
+
+Não informe horários específicos da tarde.
+
+Após o paciente responder o horário preferido, diga que irá verificar a data mais próxima disponível nesse horário.
 
 Telefone:
 ${DOCTOR_PHONE}
