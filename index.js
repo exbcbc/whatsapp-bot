@@ -285,7 +285,7 @@ ${message}`);
 if(isExistingPatient(message)){
 
 const reply=`
-Perfeito, vou avisar o Dr. Henrique Mafra. Ele entrará em contato com você através do seu número particular Telefone:
+Perfeito, vou avisar o Dr. Henrique ele entrará em contato com você através do seu número particular Telefone:
 ${DOCTOR_PHONE}
 `;
 
