@@ -223,7 +223,7 @@ Pergunte:
 
 Não informe horários específicos da tarde.
 
-Após o paciente responder o horário preferido, diga que irá verificar a data mais próxima disponível nesse horário.
+Após o paciente responder o horário preferido, diga que consegiu u encaixa parar o horario que ele quiz na ${formatDate(dates[0])}
 
 Telefone:
 ${DOCTOR_PHONE}
