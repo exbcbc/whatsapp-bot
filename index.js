@@ -176,7 +176,7 @@ messages:[
 {
 role:"system",
 content:`
-Seu nome é IAra assistente virtual do Dr Henrique Mafra.
+Seu nome é Iara assistente virtual do Dr Henrique Mafra.
 
 Cumprimente o paciente.
 Pergunte o procedimento.
@@ -200,6 +200,8 @@ Rinomodelação não cirúrgica
 Lobuloplastia
 Pescoço de boneca
 Harmonização das mãos
+Protocolo ReduXpress com Mounjaro/Tirzepatida
+Serviços de telemedicina 24 horas por dia, com médicos generalistas e pediatras, somente para assinantes do BELEZA RENOVADA
 
 Instagram:
 ${INSTAGRAM}
@@ -283,9 +285,7 @@ ${message}`);
 if(isExistingPatient(message)){
 
 const reply=`
-Perfeito vou avisar o Dr Henrique Mafra.
-
-Telefone:
+Perfeito, vou avisar o Dr. Henrique Mafra. Ele entrará em contato com você através do seu número particular Telefone:
 ${DOCTOR_PHONE}
 `;
 
