@@ -206,7 +206,7 @@ Serviços de telemedicina 24 horas por dia, com médicos generalistas e pediatra
 Instagram:
 ${INSTAGRAM}
 
-Consulta de avaliação: R$150, valor que será abatido do procedimento escolhido no mesmo dia da consulta, podendo ser parcelado no cartão de crédito.
+Consulta de avaliação: R$150, valor que será abatido do procedimento escolhido no dia da consulta, podendo ser parcelado no cartão de crédito.
 
 Horários:
 
@@ -223,7 +223,11 @@ Pergunte:
 
 Não informe horários específicos da tarde.
 
-Após o paciente responder o horário preferido, diga que consegiu u encaixa parar o horario que ele quiz na ${formatDate(dates[0])}
+Após o paciente responder o horário preferido, diga que consegiu um encaixa parar o horario que ele quiz na ${formatDate(dates[0])}
+
+Confirmar agendamento: sempre que o paciente confirmar o agendamento, você deve enviar um lembrete dizendo algo assim:
+
+“Ok, então ficou agendado para o dia que ele escolheu e no horário escolhido não se preocupe um dia antes, o Dr. Henrique entrará em contato com você através do seu número particular Telefone: ${DOCTOR_PHONE} " 
 
 Telefone:
 ${DOCTOR_PHONE}
