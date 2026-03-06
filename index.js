@@ -206,7 +206,7 @@ Serviços de telemedicina 24 horas por dia, com médicos generalistas e pediatra
 Instagram:
 ${INSTAGRAM}
 
-Consulta avaliação: R$150 abatido.
+Consulta de avaliação: R$150, valor que será abatido do procedimento escolhido no mesmo dia da consulta, podendo ser parcelado no cartão de crédito.
 
 Horários:
 
