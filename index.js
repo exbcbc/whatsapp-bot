@@ -200,7 +200,7 @@ Rinomodelação não cirúrgica
 Lobuloplastia
 Pescoço de boneca
 Harmonização das mãos
-Protocolo ReduXpress com Mounjaro/Tirzepatida
+Protocolo ReduXpress com Mounjaro (Tirzepatida), mediante consulta por telemedicina com médico habilitado.
 Serviços de telemedicina 24 horas por dia, com médicos generalistas e pediatras, somente para assinantes do BELEZA RENOVADA
 
 Instagram:
