@@ -3,7 +3,6 @@ import OpenAI from "openai";
 import dotenv from "dotenv";
 import axios from "axios";
 import fs from "fs";
-import path from "path";
 
 dotenv.config();
 
@@ -71,6 +70,8 @@ month:"long"
 
 async function sendWhatsAppMessage(to,text){
 
+try{
+
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
 await axios.post(url,new URLSearchParams({
@@ -83,9 +84,16 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
+
+}catch(e){
+console.log("Erro enviando mensagem:",e.message);
+}
+
 }
 
 async function sendWhatsAppMedia(to,media){
+
+try{
 
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
@@ -99,12 +107,18 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
+
+}catch(e){
+console.log("Erro enviando mídia:",e.message);
+}
+
 }
 
 async function downloadMedia(url,mediaType){
 
-const ext = mediaType.split("/")[1] || "dat";
+try{
 
+const ext = mediaType.split("/")[1] || "dat";
 const fileName=`media_${Date.now()}.${ext}`;
 const filePath=`./media/${fileName}`;
 
@@ -127,9 +141,19 @@ writer.on("finish",()=>{
 resolve(`${DOMAIN}/media/${fileName}`);
 });
 });
+
+}catch(e){
+
+console.log("Erro download mídia",e.message);
+return null;
+
+}
+
 }
 
 async function transcribeAudio(url){
+
+try{
 
 const localPath=url.replace(`${DOMAIN}/media/`,`./media/`);
 
@@ -139,9 +163,19 @@ model:"gpt-4o-transcribe"
 });
 
 return transcription.text;
+
+}catch(e){
+
+console.log("Erro transcrição",e.message);
+return "";
+
+}
+
 }
 
 async function generateVoice(text){
+
+try{
 
 const speech=await openai.audio.speech.create({
 model:"gpt-4o-mini-tts",
@@ -156,11 +190,19 @@ const file=`reply_${Date.now()}.mp3`;
 fs.writeFileSync(`./media/${file}`,buffer);
 
 return `${DOMAIN}/media/${file}`;
+
+}catch(e){
+
+console.log("Erro voz",e.message);
+return null;
+
+}
+
 }
 
 function isExistingPatient(message){
 
-const text=message.toLowerCase();
+const text=(message || "").toLowerCase();
 
 return(
 text.includes("já sou paciente")||
@@ -214,28 +256,25 @@ Serviços de telemedicina 24 horas por dia, com médicos generalistas e pediatra
 Instagram:
 ${INSTAGRAM}
 
-Consulta de avaliação: R$150, valor que será abatido do procedimento escolhido no dia da consulta, podendo ser parcelado no cartão de crédito.
+Consulta de avaliação: R$150, valor que será abatido do procedimento escolhido no dia da consulta.
 
 Horários:
 
 ${formatDate(dates[0])} às 19h30
 ${formatDate(dates[1])} às 19h30
 ${formatDate(dates[2])} às 19h30
+
 Sempre ofereça primeiro os horários das 19h30.
 
 Caso o paciente diga que NÃO pode às 19h30:
+
 Explique que é possível verificar uma exceção no período da tarde.
 
 Pergunte:
+
 "Qual seria o melhor horário para você no período da tarde?"
 
-Não informe horários específicos da tarde.
-
-Após o paciente responder o horário preferido, diga que consegiu um encaixa parar o horario que ele quiz na ${formatDate(dates[0])}
-
-Confirmar agendamento: sempre que o paciente confirmar o agendamento, você deve enviar um lembrete dizendo algo assim:
-
-“Ok, então ficou agendado para o dia que ele escolheu e no horário escolhido não se preocupe um dia antes, o Dr. Henrique entrará em contato com você através do seu número particular Telefone: ${DOCTOR_PHONE} " 
+Após o paciente responder o horário preferido diga que conseguiu encaixar.
 
 Telefone:
 ${DOCTOR_PHONE}
@@ -252,11 +291,12 @@ Respostas curtas.
 });
 
 return completion.choices[0].message.content;
+
 }
 
 app.post("/whatsapp",async(req,res)=>{
 
-res.type("text/xml").send("<Response></Response>");
+res.status(200).send("ok");
 
 try{
 
@@ -285,36 +325,49 @@ const mediaType=req.body.MediaContentType0;
 
 const localMedia=await downloadMedia(mediaUrl,mediaType);
 
+if(localMedia){
+
+if(from!==ADMIN_PHONE){
 await sendWhatsAppMedia(ADMIN_PHONE,localMedia);
+}
 
 if(mediaType.includes("audio")){
-
 hasAudio=true;
 message=await transcribeAudio(localMedia);
-
 }
 
 }
+
+}
+
+if(from!==ADMIN_PHONE){
 
 await sendWhatsAppMessage(
 ADMIN_PHONE,
 `Paciente: ${from}
 
 Mensagem:
-${message || "[Mídia recebida]"}`
+${message || "[MÍDIA RECEBIDA]"}`
 );
+
+}
 
 if(isExistingPatient(message)){
 
 const reply=`
-Perfeito, vou avisar o Dr. Henrique ele entrará em contato com você através do seu número particular Telefone:
+Perfeito, vou avisar o Dr. Henrique ele entrará em contato com você através do número particular:
+
 ${DOCTOR_PHONE}
 `;
 
 await sendWhatsAppMessage(from,reply);
+
+if(from!==ADMIN_PHONE){
 await sendWhatsAppMessage(ADMIN_PHONE,reply);
+}
 
 return;
+
 }
 
 user.history.push({role:"user",content:message});
@@ -327,19 +380,28 @@ if(hasAudio){
 
 const audioUrl=await generateVoice(reply);
 
+if(audioUrl){
 await sendWhatsAppMedia(from,audioUrl);
+
+if(from!==ADMIN_PHONE){
 await sendWhatsAppMedia(ADMIN_PHONE,audioUrl);
+}
+
+}
 
 }else{
 
 await sendWhatsAppMessage(from,reply);
+
+if(from!==ADMIN_PHONE){
 await sendWhatsAppMessage(ADMIN_PHONE,reply);
+}
 
 }
 
 }catch(err){
 
-console.log(err);
+console.log("Erro geral:",err.message);
 
 }
 
