@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import dotenv from "dotenv";
 import axios from "axios";
 import fs from "fs";
+import path from "path";
 
 dotenv.config();
 
@@ -11,11 +12,11 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-if (!fs.existsSync("./audio")) {
-fs.mkdirSync("./audio");
+if (!fs.existsSync("./media")) {
+fs.mkdirSync("./media");
 }
 
-app.use("/audio", express.static("./audio"));
+app.use("/media", express.static("./media"));
 
 const openai = new OpenAI({
 apiKey: process.env.OPENAI_API_KEY
@@ -100,10 +101,12 @@ password:process.env.TWILIO_AUTH_TOKEN
 });
 }
 
-async function downloadAudio(url){
+async function downloadMedia(url,mediaType){
 
-const fileName=`input_${Date.now()}.ogg`;
-const path=`./audio/${fileName}`;
+const ext = mediaType.split("/")[1] || "dat";
+
+const fileName=`media_${Date.now()}.${ext}`;
+const filePath=`./media/${fileName}`;
 
 const response=await axios({
 url,
@@ -115,18 +118,23 @@ password:process.env.TWILIO_AUTH_TOKEN
 }
 });
 
-const writer=fs.createWriteStream(path);
+const writer=fs.createWriteStream(filePath);
+
 response.data.pipe(writer);
 
 return new Promise(resolve=>{
-writer.on("finish",()=>resolve(`${DOMAIN}/audio/${fileName}`));
+writer.on("finish",()=>{
+resolve(`${DOMAIN}/media/${fileName}`);
+});
 });
 }
 
-async function transcribeAudio(path){
+async function transcribeAudio(url){
+
+const localPath=url.replace(`${DOMAIN}/media/`,`./media/`);
 
 const transcription=await openai.audio.transcriptions.create({
-file:fs.createReadStream(path.replace(`${DOMAIN}/audio/`,`./audio/`)),
+file:fs.createReadStream(localPath),
 model:"gpt-4o-transcribe"
 });
 
@@ -145,9 +153,9 @@ const buffer=Buffer.from(await speech.arrayBuffer());
 
 const file=`reply_${Date.now()}.mp3`;
 
-fs.writeFileSync(`./audio/${file}`,buffer);
+fs.writeFileSync(`./media/${file}`,buffer);
 
-return `${DOMAIN}/audio/${file}`;
+return `${DOMAIN}/media/${file}`;
 }
 
 function isExistingPatient(message){
@@ -275,27 +283,26 @@ if(numMedia>0){
 const mediaUrl=req.body.MediaUrl0;
 const mediaType=req.body.MediaContentType0;
 
+const localMedia=await downloadMedia(mediaUrl,mediaType);
+
+await sendWhatsAppMedia(ADMIN_PHONE,localMedia);
+
 if(mediaType.includes("audio")){
 
 hasAudio=true;
-
-const localAudio=await downloadAudio(mediaUrl);
-
-await sendWhatsAppMedia(ADMIN_PHONE,localAudio);
-
-message=await transcribeAudio(localAudio);
-
-}else{
-
-await sendWhatsAppMedia(ADMIN_PHONE,mediaUrl);
+message=await transcribeAudio(localMedia);
 
 }
+
 }
 
-await sendWhatsAppMessage(ADMIN_PHONE,`Paciente: ${from}
+await sendWhatsAppMessage(
+ADMIN_PHONE,
+`Paciente: ${from}
 
 Mensagem:
-${message}`);
+${message || "[Mídia recebida]"}`
+);
 
 if(isExistingPatient(message)){
 
