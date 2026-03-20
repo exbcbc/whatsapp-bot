@@ -399,7 +399,7 @@ app.post("/voice",(req,res)=>{
 res.type("text/xml");
 res.send(`
 <Response>
-<Say language="pt-BR">Olá, aqui é a Iara da clínica. Como posso ajudar?</Say>
+<Say language="pt-BR">Oi seu nome é Iara assistente virtual do Dr Henrique Mafra, Como posso ajudar?</Say>
 <Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
 </Response>
 `);
