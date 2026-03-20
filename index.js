@@ -412,3 +412,121 @@ const PORT=process.env.PORT||8080;
 app.listen(PORT,()=>{
 console.log("Servidor rodando");
 });
+// ==========================
+// VOICE (LIGAÇÃO)
+// ==========================
+
+app.post("/voice", async (req, res) => {
+
+  const from = req.body.From || "unknown";
+
+  if (!conversations[from]) {
+    conversations[from] = { history: [], lastInteraction: Date.now() };
+  }
+
+  const user = conversations[from];
+
+  if (Date.now() - user.lastInteraction > 1000 * 60 * 30) {
+    user.history = [];
+  }
+
+  user.lastInteraction = Date.now();
+
+  res.type("text/xml");
+  res.send(`
+    <Response>
+      <Say language="pt-BR">
+        Olá, aqui é a Iara da clínica Dr Henrique Mafra Estética Avançada. Como posso ajudar você hoje?
+      </Say>
+      <Gather input="speech" action="/processar" method="POST" language="pt-BR" speechTimeout="auto"/>
+    </Response>
+  `);
+
+});
+
+
+// ==========================
+// PROCESSAMENTO DA FALA
+// ==========================
+
+app.post("/processar", async (req, res) => {
+
+  const from = req.body.From || "unknown";
+  const fala = req.body.SpeechResult || "";
+
+  if (!conversations[from]) {
+    conversations[from] = { history: [], lastInteraction: Date.now() };
+  }
+
+  const user = conversations[from];
+
+  if (Date.now() - user.lastInteraction > 1000 * 60 * 30) {
+    user.history = [];
+  }
+
+  user.lastInteraction = Date.now();
+
+  // Envia para admin
+  if (from !== ADMIN_PHONE) {
+    await sendWhatsAppMessage(
+      ADMIN_PHONE,
+      `📞 LIGAÇÃO
+
+Paciente: ${from}
+
+Falou:
+${fala || "[NÃO ENTENDIDO]"}`
+    );
+  }
+
+  if (!fala) {
+    return res.send(`
+      <Response>
+        <Say language="pt-BR">Não consegui entender, pode repetir?</Say>
+        <Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
+      </Response>
+    `);
+  }
+
+  // Detecta paciente antigo
+  if (isExistingPatient(fala)) {
+
+    const reply = `
+Perfeito, vou avisar o Dr. Henrique ele entrará em contato com você através do número particular:
+
+${DOCTOR_PHONE}
+`;
+
+    return res.send(`
+      <Response>
+        <Say language="pt-BR">${reply}</Say>
+      </Response>
+    `);
+  }
+
+  // IA (mesma do WhatsApp)
+  user.history.push({ role: "user", content: fala });
+
+  const reply = await aiReply(user.history);
+
+  user.history.push({ role: "assistant", content: reply });
+
+  // Envia resposta pro admin
+  if (from !== ADMIN_PHONE) {
+    await sendWhatsAppMessage(
+      ADMIN_PHONE,
+      `🤖 RESPOSTA IARA (LIGAÇÃO)
+
+${reply}`
+    );
+  }
+
+  res.type("text/xml");
+  res.send(`
+    <Response>
+      <Say language="pt-BR">${reply}</Say>
+      <Gather input="speech" action="/processar" method="POST" language="pt-BR" speechTimeout="auto"/>
+    </Response>
+  `);
+
+});
