@@ -44,37 +44,24 @@ return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}
 }
 
 function nextAvailableDates(){
-
 let dates=[];
 let d=getBrazilDate();
-
 d.setDate(d.getDate()+5);
 
 while(dates.length<3){
-
 if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
 dates.push(new Date(d));
 }
-
 d.setDate(d.getDate()+1);
 }
 
 return dates;
 }
 
-function formatDate(date){
-return date.toLocaleDateString("pt-BR",{
-weekday:"long",
-day:"numeric",
-month:"long"
-});
-}
-
 // ================= TWILIO =================
 
 async function sendWhatsAppMessage(to,text){
 try{
-
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
 await axios.post(url,new URLSearchParams({
@@ -95,6 +82,7 @@ console.log("Erro mensagem:",e.message);
 
 async function sendWhatsAppMedia(to,media){
 try{
+if(!media) return;
 
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
@@ -118,7 +106,6 @@ console.log("Erro mídia:",e.message);
 
 async function downloadMedia(url,mediaType){
 try{
-
 const ext = mediaType.split("/")[1] || "dat";
 const fileName=`media_${Date.now()}.${ext}`;
 const filePath=`./media/${fileName}`;
@@ -134,7 +121,6 @@ password:process.env.TWILIO_AUTH_TOKEN
 });
 
 const writer=fs.createWriteStream(filePath);
-
 response.data.pipe(writer);
 
 return new Promise(resolve=>{
@@ -151,7 +137,6 @@ return null;
 
 async function transcribeAudio(url){
 try{
-
 const localPath=url.replace(`${DOMAIN}/media/`,`./media/`);
 
 const transcription=await openai.audio.transcriptions.create({
@@ -169,7 +154,6 @@ return "";
 
 async function generateVoice(text){
 try{
-
 const speech=await openai.audio.speech.create({
 model:"gpt-4o-mini-tts",
 voice:"nova",
@@ -177,7 +161,6 @@ input:text
 });
 
 const buffer=Buffer.from(await speech.arrayBuffer());
-
 const file=`reply_${Date.now()}.mp3`;
 
 fs.writeFileSync(`./media/${file}`,buffer);
@@ -192,104 +175,45 @@ return null;
 
 // ================= IA =================
 
-function isExistingPatient(message){
-
-const text=(message || "").toLowerCase();
-
-return(
-text.includes("já sou paciente")||
-text.includes("ja sou paciente")||
-text.includes("já falei com o dr")||
-text.includes("ja falei com o dr")||
-text.includes("tava falando com o dr")||
-text.includes("estava falando com o dr")
-);
-}
-
 async function aiReply(history){
 
-const dates=nextAvailableDates();
+try{
 
-const completion=await openai.chat.completions.create({
+const limitedHistory = history.slice(-6);
 
-model:"gpt-4o",
-
+const completion = await openai.chat.completions.create({
+model:"gpt-4o-mini",
+max_tokens:60,
+temperature:0.5,
 messages:[
 {
 role:"system",
-content:`
-Seu nome é Iara assistente virtual do Dr Henrique Mafra.
+content:`Seu nome é Iara, assistente da clínica Dr Henrique Mafra.
 
-Cumprimente o paciente.
-Pergunte o procedimento.
-Explique brevemente.
+Seja objetiva e leve para agendamento.
 
-Procedimentos:
-Toxina botulínica
-HIFU
-Fios de PDO
-Preenchimento
-Redução de medidas
-Bioestimulador de colágeno
-Blefaroplastia sem corte
-Remoção de vasinhos
-Remoção de verrugas
-Lipo de papada sem corte
-Terapia ortomolecular
-Tratamento da hiperidrose
-Tratamento de melasma
-Rinomodelação não cirúrgica
-Lobuloplastia
-Pescoço de boneca
-Harmonização das mãos
-Protocolo ReduXpress com Mounjaro (Tirzepatida), mediante consulta por telemedicina com médico habilitado.
-Serviços de telemedicina 24 horas por dia, com médicos generalistas e pediatras, somente para assinantes do BELEZA RENOVADA
+Consulta: R$150 (abatido no procedimento).
 
-Instagram:
-${INSTAGRAM}
+Ofereça dias à noite primeiro.
+Se não puder, pergunte horário da tarde.
 
-Consulta de avaliação: R$150, valor que será abatido do procedimento escolhido no dia da consulta.
-
-Horários:
-
-${formatDate(dates[0])} às 19h30
-${formatDate(dates[1])} às 19h30
-${formatDate(dates[2])} às 19h30
-
-Sempre ofereça primeiro os horários das 19h30.
-
-Caso o paciente diga que NÃO pode às 19h30:
-
-Explique que é possível verificar uma exceção no período da tarde.
-
-Pergunte:
-
-"Qual seria o melhor horário para você no período da tarde?"
-
-Após o paciente responder o horário preferido diga que conseguiu encaixar.
-
-Telefone:
-${DOCTOR_PHONE}
-
-Endereço:
-${CLINIC_ADDRESS}
-
-Respostas curtas.
-`
+Responda em no máximo 1 frase curta.`
 },
-...history
+...limitedHistory
 ]
-
 });
 
-return completion.choices[0].message.content;
+return completion.choices[0].message.content || "Pode repetir?";
+
+}catch(e){
+console.log("ERRO IA:", e.message);
+return "Pode repetir?";
+}
 }
 
 // ================= WHATSAPP =================
 
 app.post("/whatsapp",async(req,res)=>{
-
-res.status(200).send("ok");
 
 try{
 
@@ -320,9 +244,8 @@ const localMedia=await downloadMedia(mediaUrl,mediaType);
 
 if(localMedia){
 
-if(from!==ADMIN_PHONE){
+await new Promise(r=>setTimeout(r,500));
 await sendWhatsAppMedia(ADMIN_PHONE,localMedia);
-}
 
 if(mediaType.includes("audio")){
 hasAudio=true;
@@ -330,34 +253,9 @@ message=await transcribeAudio(localMedia);
 }
 
 }
-
 }
 
-if(from!==ADMIN_PHONE){
-
-await sendWhatsAppMessage(
-ADMIN_PHONE,
-`Paciente: ${from}
-
-Mensagem:
-${message || "[MÍDIA RECEBIDA]"}`
-);
-
-}
-
-if(isExistingPatient(message)){
-
-const reply=`
-Perfeito, vou avisar o Dr. Henrique.
-
-Ele entrará em contato com você:
-
-${DOCTOR_PHONE}
-`;
-
-await sendWhatsAppMessage(from,reply);
-return;
-}
+await sendWhatsAppMessage(ADMIN_PHONE,`📩 ${from}\n${message}`);
 
 user.history.push({role:"user",content:message});
 
@@ -366,29 +264,19 @@ const reply=await aiReply(user.history);
 user.history.push({role:"assistant",content:reply});
 
 if(hasAudio){
-
 const audioUrl=await generateVoice(reply);
-
-if(audioUrl){
 await sendWhatsAppMedia(from,audioUrl);
-
-if(from!==ADMIN_PHONE){
 await sendWhatsAppMedia(ADMIN_PHONE,audioUrl);
-}
-}
-
 }else{
-
 await sendWhatsAppMessage(from,reply);
-
-if(from!==ADMIN_PHONE){
 await sendWhatsAppMessage(ADMIN_PHONE,reply);
 }
 
-}
+res.send("ok");
 
 }catch(err){
 console.log("Erro geral:",err.message);
+res.send("ok");
 }
 
 });
@@ -399,23 +287,24 @@ app.post("/voice",(req,res)=>{
 res.type("text/xml");
 res.send(`
 <Response>
-<Say language="pt-BR">Olá, aqui é a Iara da clínica. Como posso ajudar?</Say>
-<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
+<Say>Olá, aqui é a Iara. Como posso te ajudar?</Say>
+<Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="1"/>
 </Response>
 `);
 });
 
 app.post("/processar",async(req,res)=>{
 
+try{
+
 const from=req.body.From || "unknown";
 const fala=req.body.SpeechResult || "";
 
 if(!fala){
-res.type("text/xml");
 return res.send(`
 <Response>
-<Say language="pt-BR">Pode repetir?</Say>
-<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
+<Say>Não entendi, pode repetir?</Say>
+<Gather input="speech" action="/processar" timeout="1"/>
 </Response>
 `);
 }
@@ -426,22 +315,37 @@ conversations[from]={history:[]};
 
 const user=conversations[from];
 
+if(user.history.length>6){
+user.history.shift();
+}
+
 user.history.push({role:"user",content:fala});
 
-const reply=await aiReply(user.history);
+let reply=await aiReply(user.history);
 
 user.history.push({role:"assistant",content:reply});
 
 await sendWhatsAppMessage(ADMIN_PHONE,`📞 ${from}\n${fala}`);
 await sendWhatsAppMessage(ADMIN_PHONE,`🤖 ${reply}`);
 
-res.type("text/xml");
 res.send(`
 <Response>
-<Say language="pt-BR">${reply}</Say>
-<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
+<Say>${reply}</Say>
+<Gather input="speech" action="/processar" timeout="1"/>
 </Response>
 `);
+
+}catch(e){
+
+console.log("Erro voice:",e.message);
+
+res.send(`
+<Response>
+<Say>Erro, pode repetir?</Say>
+</Response>
+`);
+
+}
 
 });
 
