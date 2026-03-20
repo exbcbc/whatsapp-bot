@@ -213,7 +213,7 @@ ${formatDate(dates[2])} às 19h30
 - NUNCA inventar datas.
 
 - Sempre falar:
-"A consulta custa R$150 e é abatida no procedimento."
+"A consulta custa R$150 sendo o valor abatida caso faça algum procedimento."
 
 - Priorizar 19h30.
 
