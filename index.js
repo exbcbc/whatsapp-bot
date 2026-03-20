@@ -198,7 +198,7 @@ messages:[
 {
 role:"system",
 content:`
-Seu nome é Iara, assistente da clínica Dr Henrique Mafra.
+Seu nome é Iara, assistente virtual do Dr Henrique Mafra.
 
 REGRAS:
 
@@ -310,11 +310,15 @@ res.send("ok");
 
 // ================= VOICE =================
 
-app.post("/voice",(req,res)=>{
+app.post("/voice",async(req,res)=>{
+
+// 🔥 áudio inicial natural
+const audioUrl = await generateVoice("Olá, aqui é a Iara da clínica do doutor Henrique Mafra. Como posso te ajudar?");
+
 res.type("text/xml");
 res.send(`
 <Response>
-<Say>Olá, sou a Iara agente virtual do dr Henrique Mafra. Como posso te ajudar?</Say>
+<Play>${audioUrl}</Play>
 <Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="1"/>
 </Response>
 `);
@@ -352,12 +356,15 @@ let reply=await aiReply(user.history);
 
 user.history.push({role:"assistant",content:reply});
 
+// 🔥 gera áudio natural
+const audioUrl = await generateVoice(reply);
+
 await sendWhatsAppMessage(ADMIN_PHONE,`📞 ${from}\n${fala}`);
 await sendWhatsAppMessage(ADMIN_PHONE,`🤖 ${reply}`);
 
 res.send(`
 <Response>
-<Say>${reply}</Say>
+<Play>${audioUrl}</Play>
 <Gather input="speech" action="/processar" timeout="1"/>
 </Response>
 `);
