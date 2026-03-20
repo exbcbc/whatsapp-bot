@@ -1,3 +1,4 @@
+```javascript
 import express from "express";
 import OpenAI from "openai";
 import dotenv from "dotenv";
@@ -21,121 +22,252 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-const DOMAIN = "https://whatsapp-bot-production-5f72.up.railway.app";
+const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
-const CLINIC_PHONE = "whatsapp:+554731700136";
-const ADMIN_PHONE = "whatsapp:+5547991812557";
-const INSTAGRAM = "@dr.henriquemafra";
+const CLINIC_PHONE="whatsapp:+554731700136";
+const ADMIN_PHONE="whatsapp:+5547991812557";
+const INSTAGRAM="@dr.henriquemafra";
 
-const CLINIC_ADDRESS = `
+const CLINIC_ADDRESS=`
 Clínica WF
 Rua 981, Número 196
 Centro em Balneário Camboriú, Santa Catarina
 `;
 
-const DOCTOR_PHONE = "47 99188-6417";
+const DOCTOR_PHONE="47 99188-6417";
 
-const conversations = {};
+const conversations={};
 
 // ================= DATA =================
 
-function getBrazilDate() {
-  return new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+function getBrazilDate(){
+return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}));
 }
 
-function nextAvailableDates() {
-  let dates = [];
-  let d = getBrazilDate();
-  d.setDate(d.getDate() + 5);
+function nextAvailableDates(){
 
-  while (dates.length < 3) {
-    if (d.getDay() !== 0 && d.getDay() !== 1 && d.getDay() !== 6) {
-      dates.push(new Date(d));
-    }
-    d.setDate(d.getDate() + 1);
-  }
+let dates=[];
+let d=getBrazilDate();
 
-  return dates;
+d.setDate(d.getDate()+5);
+
+while(dates.length<3){
+
+if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
+dates.push(new Date(d));
 }
 
-function formatDate(date) {
-  return date.toLocaleDateString("pt-BR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long"
-  });
+d.setDate(d.getDate()+1);
+}
+
+return dates;
+}
+
+function formatDate(date){
+return date.toLocaleDateString("pt-BR",{
+weekday:"long",
+day:"numeric",
+month:"long"
+});
 }
 
 // ================= TWILIO =================
 
-async function sendWhatsAppMessage(to, text) {
-  try {
-    const url = `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+async function sendWhatsAppMessage(to,text){
+try{
 
-    await axios.post(url, new URLSearchParams({
-      From: CLINIC_PHONE,
-      To: to,
-      Body: text
-    }), {
-      auth: {
-        username: process.env.TWILIO_ACCOUNT_SID,
-        password: process.env.TWILIO_AUTH_TOKEN
-      }
-    });
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
-  } catch (e) {
-    console.log("Erro mensagem:", e.message);
-  }
+await axios.post(url,new URLSearchParams({
+From:CLINIC_PHONE,
+To:to,
+Body:text
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+}catch(e){
+console.log("Erro mensagem:",e.message);
+}
+}
+
+async function sendWhatsAppMedia(to,media){
+try{
+
+const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
+
+await axios.post(url,new URLSearchParams({
+From:CLINIC_PHONE,
+To:to,
+MediaUrl:media
+}),{
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+}catch(e){
+console.log("Erro mídia:",e.message);
+}
+}
+
+// ================= MEDIA =================
+
+async function downloadMedia(url,mediaType){
+try{
+
+const ext = mediaType.split("/")[1] || "dat";
+const fileName=`media_${Date.now()}.${ext}`;
+const filePath=`./media/${fileName}`;
+
+const response=await axios({
+url,
+method:"GET",
+responseType:"stream",
+auth:{
+username:process.env.TWILIO_ACCOUNT_SID,
+password:process.env.TWILIO_AUTH_TOKEN
+}
+});
+
+const writer=fs.createWriteStream(filePath);
+
+response.data.pipe(writer);
+
+return new Promise(resolve=>{
+writer.on("finish",()=>{
+resolve(`${DOMAIN}/media/${fileName}`);
+});
+});
+
+}catch(e){
+console.log("Erro download mídia",e.message);
+return null;
+}
+}
+
+async function transcribeAudio(url){
+try{
+
+const localPath=url.replace(`${DOMAIN}/media/`,`./media/`);
+
+const transcription=await openai.audio.transcriptions.create({
+file:fs.createReadStream(localPath),
+model:"gpt-4o-transcribe"
+});
+
+return transcription.text;
+
+}catch(e){
+console.log("Erro transcrição",e.message);
+return "";
+}
+}
+
+async function generateVoice(text){
+try{
+
+const speech=await openai.audio.speech.create({
+model:"gpt-4o-mini-tts",
+voice:"nova",
+input:text
+});
+
+const buffer=Buffer.from(await speech.arrayBuffer());
+
+const file=`reply_${Date.now()}.mp3`;
+
+fs.writeFileSync(`./media/${file}`,buffer);
+
+return `${DOMAIN}/media/${file}`;
+
+}catch(e){
+console.log("Erro voz",e.message);
+return null;
+}
 }
 
 // ================= IA =================
 
-function isExistingPatient(message) {
-  const text = (message || "").toLowerCase();
-  return text.includes("já sou paciente") || text.includes("ja sou paciente");
+function isExistingPatient(message){
+
+const text=(message || "").toLowerCase();
+
+return(
+text.includes("já sou paciente")||
+text.includes("ja sou paciente")||
+text.includes("já falei com o dr")||
+text.includes("ja falei com o dr")||
+text.includes("tava falando com o dr")||
+text.includes("estava falando com o dr")
+);
 }
 
-async function aiReply(history) {
+async function aiReply(history){
 
-  const dates = nextAvailableDates();
+const dates=nextAvailableDates();
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: `
-Você é Iara, assistente virtual da clínica Dr Henrique Mafra.
+const completion=await openai.chat.completions.create({
 
-REGRAS IMPORTANTES:
-- Nunca fale de política, prefeito ou assuntos fora da clínica
-- Nunca invente coisas
-- Seja profissional, simpática e objetiva
-- Sempre conduza para agendamento
+model:"gpt-4o",
 
-FLUXO:
-1. Cumprimente
-2. Pergunte o procedimento
-3. Explique breve
-4. Ofereça agendamento
+messages:[
+{
+role:"system",
+content:`
+Seu nome é Iara assistente virtual do Dr Henrique Mafra.
+
+Cumprimente o paciente.
+Pergunte o procedimento.
+Explique brevemente.
 
 Procedimentos:
 Toxina botulínica
 HIFU
 Fios de PDO
 Preenchimento
-Lipo de papada
+Redução de medidas
+Bioestimulador de colágeno
+Blefaroplastia sem corte
+Remoção de vasinhos
 Remoção de verrugas
+Lipo de papada sem corte
+Terapia ortomolecular
+Tratamento da hiperidrose
+Tratamento de melasma
+Rinomodelação não cirúrgica
+Lobuloplastia
+Pescoço de boneca
+Harmonização das mãos
+Protocolo ReduXpress com Mounjaro (Tirzepatida), mediante consulta por telemedicina com médico habilitado.
+Serviços de telemedicina 24 horas por dia, com médicos generalistas e pediatras, somente para assinantes do BELEZA RENOVADA
 
-Consulta: R$150
+Instagram:
+${INSTAGRAM}
 
-Horários disponíveis:
+Consulta de avaliação: R$150, valor que será abatido do procedimento escolhido no dia da consulta.
+
+Horários:
+
 ${formatDate(dates[0])} às 19h30
 ${formatDate(dates[1])} às 19h30
 ${formatDate(dates[2])} às 19h30
 
-Se não puder:
-"Qual horário à tarde você prefere?"
+Sempre ofereça primeiro os horários das 19h30.
+
+Caso o paciente diga que NÃO pode às 19h30:
+
+Explique que é possível verificar uma exceção no período da tarde.
+
+Pergunte:
+
+"Qual seria o melhor horário para você no período da tarde?"
+
+Após o paciente responder o horário preferido diga que conseguiu encaixar.
 
 Telefone:
 ${DOCTOR_PHONE}
@@ -143,106 +275,182 @@ ${DOCTOR_PHONE}
 Endereço:
 ${CLINIC_ADDRESS}
 
-Respostas curtas e naturais.
+Respostas curtas.
 `
-      },
-      ...history
-    ]
-  });
+},
+...history
+]
 
-  return completion.choices[0].message.content;
+});
+
+return completion.choices[0].message.content;
 }
 
 // ================= WHATSAPP =================
 
-app.post("/whatsapp", async (req, res) => {
+app.post("/whatsapp",async(req,res)=>{
 
-  res.send("ok");
+res.status(200).send("ok");
 
-  const from = req.body.From;
-  const message = req.body.Body || "";
+try{
 
-  if (!conversations[from]) {
-    conversations[from] = { history: [] };
-  }
+const from=req.body.From;
+let message=req.body.Body || "";
+const numMedia=parseInt(req.body.NumMedia || 0);
 
-  const user = conversations[from];
+if(!conversations[from]){
+conversations[from]={history:[],lastInteraction:Date.now()};
+}
 
-  user.history.push({ role: "user", content: message });
+const user=conversations[from];
 
-  const reply = await aiReply(user.history);
+if(Date.now()-user.lastInteraction>1000*60*30){
+user.history=[];
+}
 
-  user.history.push({ role: "assistant", content: reply });
+user.lastInteraction=Date.now();
 
-  await sendWhatsAppMessage(from, reply);
+let hasAudio=false;
 
-  await sendWhatsAppMessage(ADMIN_PHONE, `💬 ${from}\n${message}`);
-  await sendWhatsAppMessage(ADMIN_PHONE, `🤖 ${reply}`);
+if(numMedia>0){
+
+const mediaUrl=req.body.MediaUrl0;
+const mediaType=req.body.MediaContentType0;
+
+const localMedia=await downloadMedia(mediaUrl,mediaType);
+
+if(localMedia){
+
+if(from!==ADMIN_PHONE){
+await sendWhatsAppMedia(ADMIN_PHONE,localMedia);
+}
+
+if(mediaType.includes("audio")){
+hasAudio=true;
+message=await transcribeAudio(localMedia);
+}
+
+}
+
+}
+
+if(from!==ADMIN_PHONE){
+
+await sendWhatsAppMessage(
+ADMIN_PHONE,
+`Paciente: ${from}
+
+Mensagem:
+${message || "[MÍDIA RECEBIDA]"}`
+);
+
+}
+
+if(isExistingPatient(message)){
+
+const reply=`
+Perfeito, vou avisar o Dr. Henrique.
+
+Ele entrará em contato com você:
+
+${DOCTOR_PHONE}
+`;
+
+await sendWhatsAppMessage(from,reply);
+return;
+}
+
+user.history.push({role:"user",content:message});
+
+const reply=await aiReply(user.history);
+
+user.history.push({role:"assistant",content:reply});
+
+if(hasAudio){
+
+const audioUrl=await generateVoice(reply);
+
+if(audioUrl){
+await sendWhatsAppMedia(from,audioUrl);
+
+if(from!==ADMIN_PHONE){
+await sendWhatsAppMedia(ADMIN_PHONE,audioUrl);
+}
+}
+
+}else{
+
+await sendWhatsAppMessage(from,reply);
+
+if(from!==ADMIN_PHONE){
+await sendWhatsAppMessage(ADMIN_PHONE,reply);
+}
+
+}
+
+}catch(err){
+console.log("Erro geral:",err.message);
+}
 
 });
 
 // ================= VOICE =================
 
-app.post("/voice", (req, res) => {
-
-  res.type("text/xml");
-
-  res.send(`
+app.post("/voice",(req,res)=>{
+res.type("text/xml");
+res.send(`
 <Response>
-  <Say language="pt-BR">
-    Olá, aqui é a Iara da clínica Dr Henrique Mafra. Como posso ajudar?
-  </Say>
-  <Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
+<Say language="pt-BR">Olá, aqui é a Iara da clínica. Como posso ajudar?</Say>
+<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
 </Response>
-  `);
-
+`);
 });
 
-app.post("/processar", async (req, res) => {
+app.post("/processar",async(req,res)=>{
 
-  const from = req.body.From || "unknown";
-  const fala = req.body.SpeechResult || "";
+const from=req.body.From || "unknown";
+const fala=req.body.SpeechResult || "";
 
-  if (!fala) {
-    res.type("text/xml");
-    return res.send(`
+if(!fala){
+res.type("text/xml");
+return res.send(`
 <Response>
-  <Say language="pt-BR">Pode repetir?</Say>
-  <Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
+<Say language="pt-BR">Pode repetir?</Say>
+<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
 </Response>
-    `);
-  }
+`);
+}
 
-  if (!conversations[from]) {
-    conversations[from] = { history: [] };
-  }
+if(!conversations[from]){
+conversations[from]={history:[]};
+}
 
-  const user = conversations[from];
+const user=conversations[from];
 
-  user.history.push({ role: "user", content: fala });
+user.history.push({role:"user",content:fala});
 
-  const reply = await aiReply(user.history);
+const reply=await aiReply(user.history);
 
-  user.history.push({ role: "assistant", content: reply });
+user.history.push({role:"assistant",content:reply});
 
-  await sendWhatsAppMessage(ADMIN_PHONE, `📞 ${from}\n${fala}`);
-  await sendWhatsAppMessage(ADMIN_PHONE, `🤖 ${reply}`);
+await sendWhatsAppMessage(ADMIN_PHONE,`📞 ${from}\n${fala}`);
+await sendWhatsAppMessage(ADMIN_PHONE,`🤖 ${reply}`);
 
-  res.type("text/xml");
-
-  res.send(`
+res.type("text/xml");
+res.send(`
 <Response>
-  <Say language="pt-BR">${reply}</Say>
-  <Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
+<Say language="pt-BR">${reply}</Say>
+<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
 </Response>
-  `);
+`);
 
 });
 
 // ================= START =================
 
-const PORT = process.env.PORT || 8080;
+const PORT=process.env.PORT||8080;
 
-app.listen(PORT, () => {
-  console.log("Servidor rodando");
+app.listen(PORT,()=>{
+console.log("Servidor rodando");
 });
+```
