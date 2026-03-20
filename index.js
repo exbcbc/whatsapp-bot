@@ -58,6 +58,14 @@ d.setDate(d.getDate()+1);
 return dates;
 }
 
+function formatDate(date){
+return date.toLocaleDateString("pt-BR",{
+weekday:"long",
+day:"numeric",
+month:"long"
+});
+}
+
 // ================= TWILIO =================
 
 async function sendWhatsAppMessage(to,text){
@@ -179,25 +187,44 @@ async function aiReply(history){
 
 try{
 
+const dates=nextAvailableDates();
 const limitedHistory = history.slice(-6);
 
 const completion = await openai.chat.completions.create({
 model:"gpt-4o-mini",
-max_tokens:60,
-temperature:0.5,
+max_tokens:80,
+temperature:0.4,
 messages:[
 {
 role:"system",
-content:`Seu nome é Iara, assistente da clínica Dr Henrique Mafra.
+content:`
+Seu nome é Iara, assistente da clínica Dr Henrique Mafra.
 
-Seja objetiva e leve para agendamento.
+REGRAS:
 
-Consulta: R$150 (abatido no procedimento).
+- NÃO atende domingo nem segunda.
+- Se pedirem esses dias, negar e redirecionar.
 
-Ofereça dias à noite primeiro.
-Se não puder, pergunte horário da tarde.
+- Oferecer SOMENTE:
+${formatDate(dates[0])} às 19h30
+${formatDate(dates[1])} às 19h30
+${formatDate(dates[2])} às 19h30
 
-Responda em no máximo 1 frase curta.`
+- NUNCA inventar datas.
+
+- Sempre falar:
+"A consulta custa R$150 e é abatida no procedimento."
+
+- Priorizar 19h30.
+
+- Se não puder:
+perguntar horário da tarde.
+
+- Responder curto (máx 2 frases).
+
+FLUXO:
+Cumprimentar → entender → explicar → agendar.
+`
 },
 ...limitedHistory
 ]
@@ -287,7 +314,7 @@ app.post("/voice",(req,res)=>{
 res.type("text/xml");
 res.send(`
 <Response>
-<Say>Olá, aqui é a Iara. Como posso te ajudar?</Say>
+<Say>Olá, sou a Iara agente virtual do dr Henrique Mafra. Como posso te ajudar?</Say>
 <Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="1"/>
 </Response>
 `);
