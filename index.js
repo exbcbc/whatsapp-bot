@@ -217,8 +217,14 @@ ${formatDate(dates[2])} às 19h30
 
 - Priorizar 19h30.
 
-- Se não puder:
-perguntar horário da tarde.
+- SE O PACIENTE NÃO PUDER À NOITE:
+Perguntar:
+"Qual horário no período da tarde você prefere?"
+
+- DEPOIS QUE ELE RESPONDER:
+Dizer que conseguiu encaixar nesse horário.
+
+- NÃO negar horário da tarde.
 
 - Responder curto (máx 2 frases).
 
@@ -313,13 +319,13 @@ res.send("ok");
 app.post("/voice",async(req,res)=>{
 
 // 🔥 áudio inicial natural
-const audioUrl = await generateVoice("Olá, aqui é a Iara da clínica do doutor Henrique Mafra. Como posso te ajudar?");
+const audioUrl = await generateVoice("Olá, sou a Iara assistente virtual do doutor Henrique Mafra. Como posso te ajudar?");
 
 res.type("text/xml");
 res.send(`
 <Response>
 <Play>${audioUrl}</Play>
-<Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="1"/>
+<Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="3"/>
 </Response>
 `);
 });
