@@ -82,6 +82,7 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
+
 }catch(e){
 console.log("Erro mensagem:",e.message);
 }
@@ -103,6 +104,7 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
+
 }catch(e){
 console.log("Erro mídia:",e.message);
 }
@@ -193,9 +195,7 @@ text.includes("ja falei com o dr")
 }
 
 async function aiReply(history){
-
 try{
-
 const dates=nextAvailableDates();
 
 const completion=await openai.chat.completions.create({
@@ -211,45 +211,14 @@ Cumprimente o paciente.
 Pergunte o procedimento.
 Explique brevemente.
 
-Procedimentos:
-Toxina botulínica
-HIFU
-Fios de PDO
-Preenchimento
-Redução de medidas
-Bioestimulador de colágeno
-Blefaroplastia sem corte
-Remoção de vasinhos
-Remoção de verrugas
-Lipo de papada sem corte
-Terapia ortomolecular
-Tratamento da hiperidrose
-Tratamento de melasma
-Rinomodelação não cirúrgica
-Lobuloplastia
-Pescoço de boneca
-Harmonização das mãos
-
-Instagram:
-${INSTAGRAM}
-
-Consulta de avaliação: R$150, valor que será abatido no procedimento.
+Consulta: R$150 abatido no procedimento.
 
 Horários:
 ${formatDate(dates[0])} às 19h30
 ${formatDate(dates[1])} às 19h30
 ${formatDate(dates[2])} às 19h30
 
-Sempre priorize 19h30.
-
-Se não puder:
-pergunte horário da tarde.
-
-Telefone:
-${DOCTOR_PHONE}
-
-Endereço:
-${CLINIC_ADDRESS}
+Se não puder à noite, perguntar horário da tarde.
 
 Respostas curtas.
 `
@@ -262,15 +231,13 @@ return completion.choices[0].message.content || "Pode repetir?";
 
 }catch(e){
 console.log("ERRO IA:",e.message);
-return "Desculpa, tive um erro. Pode repetir?";
+return "Erro, pode repetir?";
 }
 }
 
 // ================= WHATSAPP =================
 
 app.post("/whatsapp",async(req,res)=>{
-
-res.status(200).send("ok");
 
 try{
 
@@ -301,6 +268,8 @@ const localMedia=await downloadMedia(mediaUrl,mediaType);
 
 if(localMedia){
 
+await new Promise(r=>setTimeout(r,800));
+
 await sendWhatsAppMedia(ADMIN_PHONE,localMedia);
 
 if(mediaType.includes("audio")){
@@ -314,9 +283,8 @@ message=await transcribeAudio(localMedia);
 await sendWhatsAppMessage(ADMIN_PHONE,`📩 ${from}\n${message}`);
 
 if(isExistingPatient(message)){
-const reply=`O Dr Henrique vai te chamar no número ${DOCTOR_PHONE}`;
-await sendWhatsAppMessage(from,reply);
-return;
+await sendWhatsAppMessage(from,`O Dr Henrique vai te chamar: ${DOCTOR_PHONE}`);
+return res.send("ok");
 }
 
 user.history.push({role:"user",content:message});
@@ -334,8 +302,11 @@ await sendWhatsAppMessage(from,reply);
 await sendWhatsAppMessage(ADMIN_PHONE,reply);
 }
 
+res.send("ok");
+
 }catch(err){
 console.log("Erro geral:",err.message);
+res.send("ok");
 }
 
 });
@@ -363,8 +334,8 @@ if(!fala){
 res.type("text/xml");
 return res.send(`
 <Response>
-<Say language="pt-BR">Pode repetir?</Say>
-<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
+<Say>Não entendi, pode repetir?</Say>
+<Gather input="speech" action="/processar"/>
 </Response>
 `);
 }
@@ -375,13 +346,15 @@ conversations[from]={history:[]};
 
 const user=conversations[from];
 
-if(user.history.length>10){
-user.history.shift();
-}
-
 user.history.push({role:"user",content:fala});
 
-const reply=await aiReply(user.history);
+let reply;
+
+try{
+reply=await aiReply(user.history);
+}catch{
+reply="Erro, pode repetir?";
+}
 
 user.history.push({role:"assistant",content:reply});
 
@@ -391,21 +364,15 @@ await sendWhatsAppMessage(ADMIN_PHONE,`🤖 ${reply}`);
 res.type("text/xml");
 res.send(`
 <Response>
-<Say language="pt-BR">${reply}</Say>
-<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
+<Say>${reply}</Say>
+<Gather input="speech" action="/processar"/>
 </Response>
 `);
 
 }catch(e){
-
 console.log("Erro voice:",e.message);
-
 res.type("text/xml");
-res.send(`
-<Response>
-<Say language="pt-BR">Erro na ligação, pode repetir?</Say>
-</Response>
-`);
+res.send(`<Response><Say>Erro</Say></Response>`);
 }
 
 });
