@@ -44,18 +44,14 @@ return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}
 }
 
 function nextAvailableDates(){
-
 let dates=[];
 let d=getBrazilDate();
-
 d.setDate(d.getDate()+5);
 
 while(dates.length<3){
-
 if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
 dates.push(new Date(d));
 }
-
 d.setDate(d.getDate()+1);
 }
 
@@ -74,7 +70,6 @@ month:"long"
 
 async function sendWhatsAppMessage(to,text){
 try{
-
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
 await axios.post(url,new URLSearchParams({
@@ -87,7 +82,6 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
-
 }catch(e){
 console.log("Erro mensagem:",e.message);
 }
@@ -95,6 +89,7 @@ console.log("Erro mensagem:",e.message);
 
 async function sendWhatsAppMedia(to,media){
 try{
+if(!media) return;
 
 const url=`https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Messages.json`;
 
@@ -108,7 +103,6 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
-
 }catch(e){
 console.log("Erro mídia:",e.message);
 }
@@ -118,7 +112,6 @@ console.log("Erro mídia:",e.message);
 
 async function downloadMedia(url,mediaType){
 try{
-
 const ext = mediaType.split("/")[1] || "dat";
 const fileName=`media_${Date.now()}.${ext}`;
 const filePath=`./media/${fileName}`;
@@ -134,7 +127,6 @@ password:process.env.TWILIO_AUTH_TOKEN
 });
 
 const writer=fs.createWriteStream(filePath);
-
 response.data.pipe(writer);
 
 return new Promise(resolve=>{
@@ -151,7 +143,6 @@ return null;
 
 async function transcribeAudio(url){
 try{
-
 const localPath=url.replace(`${DOMAIN}/media/`,`./media/`);
 
 const transcription=await openai.audio.transcriptions.create({
@@ -169,7 +160,6 @@ return "";
 
 async function generateVoice(text){
 try{
-
 const speech=await openai.audio.speech.create({
 model:"gpt-4o-mini-tts",
 voice:"nova",
@@ -177,7 +167,6 @@ input:text
 });
 
 const buffer=Buffer.from(await speech.arrayBuffer());
-
 const file=`reply_${Date.now()}.mp3`;
 
 fs.writeFileSync(`./media/${file}`,buffer);
@@ -193,27 +182,25 @@ return null;
 // ================= IA =================
 
 function isExistingPatient(message){
-
 const text=(message || "").toLowerCase();
 
 return(
 text.includes("já sou paciente")||
 text.includes("ja sou paciente")||
 text.includes("já falei com o dr")||
-text.includes("ja falei com o dr")||
-text.includes("tava falando com o dr")||
-text.includes("estava falando com o dr")
+text.includes("ja falei com o dr")
 );
 }
 
 async function aiReply(history){
 
+try{
+
 const dates=nextAvailableDates();
 
 const completion=await openai.chat.completions.create({
-
 model:"gpt-4o-mini",
-
+max_tokens:120,
 messages:[
 {
 role:"system",
@@ -242,31 +229,21 @@ Rinomodelação não cirúrgica
 Lobuloplastia
 Pescoço de boneca
 Harmonização das mãos
-Protocolo ReduXpress com Mounjaro (Tirzepatida), mediante consulta por telemedicina com médico habilitado.
-Serviços de telemedicina 24 horas por dia, com médicos generalistas e pediatras, somente para assinantes do BELEZA RENOVADA
 
 Instagram:
 ${INSTAGRAM}
 
-Consulta de avaliação: R$150, valor que será abatido do procedimento escolhido no dia da consulta.
+Consulta de avaliação: R$150, valor que será abatido no procedimento.
 
 Horários:
-
 ${formatDate(dates[0])} às 19h30
 ${formatDate(dates[1])} às 19h30
 ${formatDate(dates[2])} às 19h30
 
-Sempre ofereça primeiro os horários das 19h30.
+Sempre priorize 19h30.
 
-Caso o paciente diga que NÃO pode às 19h30:
-
-Explique que é possível verificar uma exceção no período da tarde.
-
-Pergunte:
-
-"Qual seria o melhor horário para você no período da tarde?"
-
-Após o paciente responder o horário preferido diga que conseguiu encaixar.
+Se não puder:
+pergunte horário da tarde.
 
 Telefone:
 ${DOCTOR_PHONE}
@@ -279,10 +256,14 @@ Respostas curtas.
 },
 ...history
 ]
-
 });
 
-return completion.choices[0].message.content;
+return completion.choices[0].message.content || "Pode repetir?";
+
+}catch(e){
+console.log("ERRO IA:",e.message);
+return "Desculpa, tive um erro. Pode repetir?";
+}
 }
 
 // ================= WHATSAPP =================
@@ -320,9 +301,7 @@ const localMedia=await downloadMedia(mediaUrl,mediaType);
 
 if(localMedia){
 
-if(from!==ADMIN_PHONE){
 await sendWhatsAppMedia(ADMIN_PHONE,localMedia);
-}
 
 if(mediaType.includes("audio")){
 hasAudio=true;
@@ -330,31 +309,12 @@ message=await transcribeAudio(localMedia);
 }
 
 }
-
 }
 
-if(from!==ADMIN_PHONE){
-
-await sendWhatsAppMessage(
-ADMIN_PHONE,
-`Paciente: ${from}
-
-Mensagem:
-${message || "[MÍDIA RECEBIDA]"}`
-);
-
-}
+await sendWhatsAppMessage(ADMIN_PHONE,`📩 ${from}\n${message}`);
 
 if(isExistingPatient(message)){
-
-const reply=`
-Perfeito, vou avisar o Dr. Henrique.
-
-Ele entrará em contato com você:
-
-${DOCTOR_PHONE}
-`;
-
+const reply=`O Dr Henrique vai te chamar no número ${DOCTOR_PHONE}`;
 await sendWhatsAppMessage(from,reply);
 return;
 }
@@ -366,25 +326,12 @@ const reply=await aiReply(user.history);
 user.history.push({role:"assistant",content:reply});
 
 if(hasAudio){
-
 const audioUrl=await generateVoice(reply);
-
-if(audioUrl){
 await sendWhatsAppMedia(from,audioUrl);
-
-if(from!==ADMIN_PHONE){
 await sendWhatsAppMedia(ADMIN_PHONE,audioUrl);
-}
-}
-
 }else{
-
 await sendWhatsAppMessage(from,reply);
-
-if(from!==ADMIN_PHONE){
 await sendWhatsAppMessage(ADMIN_PHONE,reply);
-}
-
 }
 
 }catch(err){
@@ -399,13 +346,15 @@ app.post("/voice",(req,res)=>{
 res.type("text/xml");
 res.send(`
 <Response>
-<Say language="pt-BR">Oi seu nome é Iara assistente virtual do Dr Henrique Mafra, Como posso ajudar?</Say>
-<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
+<Say language="pt-BR">Olá, aqui é a Iara da clínica. Como posso ajudar?</Say>
+<Gather input="speech" action="/processar" method="POST" language="pt-BR" speechTimeout="auto" timeout="2"/>
 </Response>
 `);
 });
 
 app.post("/processar",async(req,res)=>{
+
+try{
 
 const from=req.body.From || "unknown";
 const fala=req.body.SpeechResult || "";
@@ -426,6 +375,10 @@ conversations[from]={history:[]};
 
 const user=conversations[from];
 
+if(user.history.length>10){
+user.history.shift();
+}
+
 user.history.push({role:"user",content:fala});
 
 const reply=await aiReply(user.history);
@@ -442,6 +395,18 @@ res.send(`
 <Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
 </Response>
 `);
+
+}catch(e){
+
+console.log("Erro voice:",e.message);
+
+res.type("text/xml");
+res.send(`
+<Response>
+<Say language="pt-BR">Erro na ligação, pode repetir?</Say>
+</Response>
+`);
+}
 
 });
 
