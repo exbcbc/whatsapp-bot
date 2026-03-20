@@ -399,11 +399,8 @@ app.post("/voice",(req,res)=>{
 res.type("text/xml");
 res.send(`
 <Response>
-<Say language="pt-BR">
-Olá, aqui é a Iara da clínica Dr Henrique Mafra.
-Como posso te ajudar?
-</Say>
-<Gather input="speech" action="/processar" method="POST" language="pt-BR" speechTimeout="auto" timeout="2"/>
+<Say language="pt-BR">Oi seu nome é Iara assistente virtual do Dr Henrique Mafra, Como posso ajudar?</Say>
+<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
 </Response>
 `);
 });
@@ -417,8 +414,8 @@ if(!fala){
 res.type("text/xml");
 return res.send(`
 <Response>
-<Say language="pt-BR">Não entendi, pode repetir?</Say>
-<Gather input="speech" action="/processar" method="POST" language="pt-BR" speechTimeout="auto" timeout="2"/>
+<Say language="pt-BR">Pode repetir?</Say>
+<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
 </Response>
 `);
 }
@@ -429,19 +426,12 @@ conversations[from]={history:[]};
 
 const user=conversations[from];
 
-// 🔥 Limita histórico (evita lentidão)
-if(user.history.length > 10){
-user.history.shift();
-}
-
 user.history.push({role:"user",content:fala});
 
-// 🔥 IA mais rápida
 const reply=await aiReply(user.history);
 
 user.history.push({role:"assistant",content:reply});
 
-// envia pro admin
 await sendWhatsAppMessage(ADMIN_PHONE,`📞 ${from}\n${fala}`);
 await sendWhatsAppMessage(ADMIN_PHONE,`🤖 ${reply}`);
 
@@ -449,7 +439,7 @@ res.type("text/xml");
 res.send(`
 <Response>
 <Say language="pt-BR">${reply}</Say>
-<Gather input="speech" action="/processar" method="POST" language="pt-BR" speechTimeout="auto" timeout="2"/>
+<Gather input="speech" action="/processar" method="POST" language="pt-BR"/>
 </Response>
 `);
 
