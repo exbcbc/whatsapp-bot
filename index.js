@@ -369,7 +369,17 @@ res.type("text/xml");
 res.send(`
 <Response>
 <Play>${audioUrl}</Play>
-<Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="auto"/>
+
+<Gather 
+  input="speech" 
+  action="/processar" 
+  method="POST"
+  speechTimeout="auto" 
+  timeout="3"
+/>
+
+<Redirect>/voice</Redirect>
+
 </Response>
 `);
 });
