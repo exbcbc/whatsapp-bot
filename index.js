@@ -359,87 +359,120 @@ res.send("ok");
 });
 
 // ================= VOICE =================
+app.post("/voice", async (req, res) => {
 
-app.post("/voice",async(req,res)=>{
+  // 🔥 áudio inicial natural
+  const audioUrl = await generateVoice("Olá, sou a Iara assistente virtual do doutor Henrique Mafra. Como posso te ajudar?");
 
-// 🔥 áudio inicial natural
-const audioUrl = await generateVoice("Olá, sou a Iara assistente virtual do doutor Henrique Mafra. Como posso te ajudar?");
-
-res.type("text/xml");
-res.send(`
+  res.type("text/xml");
+  res.send(`
 <Response>
-<Play>${audioUrl}</Play>
+  <Play>${audioUrl}</Play>
 
-<Gather 
-  input="speech" 
-  action="/processar" 
-  method="POST"
-  speechTimeout="auto" 
-  timeout="3"
-/>
+  <Gather 
+    input="speech" 
+    action="/processar" 
+    method="POST" 
+    speechTimeout="auto" 
+    timeout="5"
+  />
 
-<Redirect>/voice</Redirect>
-
+  <Redirect>/voice</Redirect>
 </Response>
-`);
+  `);
 });
 
-app.post("/processar",async(req,res)=>{
 
-try{
+app.post("/processar", async (req, res) => {
 
-const from=req.body.From || "unknown";
-const fala=req.body.SpeechResult || "";
+  try {
 
-if(!fala){
-return res.send(`
+    const from = req.body.From || "unknown";
+    const fala = req.body.SpeechResult || "";
+
+    // 🔥 SE NÃO ENTENDER
+    if (!fala) {
+
+      const audioErro = await generateVoice("Não entendi, pode repetir?");
+
+      return res.send(`
 <Response>
-<Say>Não entendi, pode repetir?</Say>
-<Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="6"/>
+  <Play>${audioErro}</Play>
+
+  <Gather 
+    input="speech" 
+    action="/processar" 
+    method="POST"
+    speechTimeout="auto" 
+    timeout="5"
+  />
+
+  <Redirect>/voice</Redirect>
 </Response>
-`);
-}
+      `);
+    }
 
-if(!conversations[from]){
-conversations[from]={history:[]};
-}
+    if (!conversations[from]) {
+      conversations[from] = { history: [] };
+    }
 
-const user=conversations[from];
+    const user = conversations[from];
 
-if(user.history.length>6){
-user.history.shift();
-}
+    if (user.history.length > 6) {
+      user.history.shift();
+    }
 
-user.history.push({role:"user",content:fala});
+    user.history.push({ role: "user", content: fala });
 
-let reply=await aiReply(user.history);
+    let reply = await aiReply(user.history);
 
-user.history.push({role:"assistant",content:reply});
+    user.history.push({ role: "assistant", content: reply });
 
-// 🔥 gera áudio natural
-const audioUrl = await generateVoice(reply);
+    // 🔥 áudio natural da resposta
+    const audioUrl = await generateVoice(reply);
 
-await sendWhatsAppMessage(ADMIN_PHONE,`📞 ${from}\n${fala}`);
-await sendWhatsAppMessage(ADMIN_PHONE,`🤖 ${reply}`);
+    // 🔥 envio pro admin
+    await sendWhatsAppMessage(ADMIN_PHONE, `📞 ${from}\n${fala}`);
+    await sendWhatsAppMessage(ADMIN_PHONE, `🤖 ${reply}`);
 
-res.send(`
+    res.send(`
 <Response>
-<Play>${audioUrl}</Play>
-<Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="6"/>
+  <Play>${audioUrl}</Play>
+
+  <Gather 
+    input="speech" 
+    action="/processar" 
+    method="POST" 
+    speechTimeout="auto" 
+    timeout="5"
+  />
+
+  <Redirect>/voice</Redirect>
 </Response>
-`);
+    `);
 
-}catch(e){
+  } catch (e) {
 
-console.log("Erro voice:",e.message);
+    console.log("Erro voice:", e.message);
 
-res.send(`
+    const audioErro = await generateVoice("Tive um erro aqui, pode repetir?");
+
+    res.send(`
 <Response>
-<Say>Erro, pode repetir?</Say>
-</Response>
-`);
+  <Play>${audioErro}</Play>
 
-}
+  <Gather 
+    input="speech" 
+    action="/processar" 
+    method="POST" 
+    speechTimeout="auto" 
+    timeout="5"
+  />
+
+  <Redirect>/voice</Redirect>
+</Response>
+    `);
+  }
 
 });
 
