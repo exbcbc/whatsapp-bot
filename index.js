@@ -395,7 +395,7 @@ if(!fala){
 return res.send(`
 <Response>
 <Say>Não entendi, pode repetir?</Say>
-<Gather input="speech" action="/processar" timeout="1"/>
+<Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="6"/>
 </Response>
 `);
 }
@@ -425,7 +425,7 @@ await sendWhatsAppMessage(ADMIN_PHONE,`🤖 ${reply}`);
 res.send(`
 <Response>
 <Play>${audioUrl}</Play>
-<Gather input="speech" action="/processar" timeout="1"/>
+<Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="6"/>
 </Response>
 `);
 
