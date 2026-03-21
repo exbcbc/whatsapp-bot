@@ -213,6 +213,16 @@ ${formatDate(dates[0])} às 19h30
 ${formatDate(dates[1])} às 19h45
 ${formatDate(dates[2])} às 20h00
 
+- SE FOR SÁBADO: 
+Oferecer 3 opções dentro do horário da manhã/tarde:
+
+10h30 
+11h30  
+13h00  
+Sempre deixar claro que sábado tem horário reduzido.
+
+---
+
 - NUNCA inventar novos dias fora desses.
 
 - SEMPRE FALAR:
@@ -251,6 +261,7 @@ REGRAS DE AGENDAMENTO:
 IMPORTANTE:
 
 - Nunca dizer que não tem horário à tarde
+- Nunca oferecer horário à noite no sábado
 - Sempre tentar encaixar
 - Sempre parecer natural
 -SEMPRE FALAR:
