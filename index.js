@@ -210,8 +210,8 @@ Terça a sexta: 14h às 21h e Sábado: 10h às 14h
 
 - Oferecer inicialmente SOMENTE:
 ${formatDate(dates[0])} às 19h30
-${formatDate(dates[1])} às 19h30
-${formatDate(dates[2])} às 19h30
+${formatDate(dates[1])} às 19h45
+${formatDate(dates[2])} às 20h00
 
 - NUNCA inventar novos dias fora desses.
 
@@ -261,7 +261,7 @@ IMPORTANTE:
 
 - Sempre que fizer sentido na conversa, principalmente ao final da resposta ou após sugerir horários, incluir de forma natural:
 
-"Para saber mais sobre os procedimentos e acompanhar o dia a dia do Dr. Henrique Mafra, acesse nosso Instagram: ${INSTAGRAM} "
+"Para saber mais sobre os procedimentos e acompanhar o dia a dia do Dr. Henrique Mafra, acesse nosso Instagram dr. Henrique Mafra"
 
 - Não repetir em todas as mensagens.
 - Usar principalmente:
