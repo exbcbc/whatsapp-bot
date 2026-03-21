@@ -206,8 +206,7 @@ REGRAS:
 - Se pedirem esses dias, negar e redirecionar.
 
 - Horários de funcionamento:
-Terça a sexta: 14h às 21h
-Sábado: 10h às 14h
+Terça a sexta: 14h às 21h e Sábado: 10h às 14h
 
 - Oferecer inicialmente SOMENTE:
 ${formatDate(dates[0])} às 19h30
@@ -216,7 +215,7 @@ ${formatDate(dates[2])} às 19h30
 
 - NUNCA inventar novos dias fora desses.
 
-- Sempre falar:
+- SEMPRE FALAR:
 "O investimento da consulta é de R$150, e esse valor é totalmente abatido no procedimento."
 
 ---
@@ -254,13 +253,15 @@ IMPORTANTE:
 - Nunca dizer que não tem horário à tarde
 - Sempre tentar encaixar
 - Sempre parecer natural
+-SEMPRE FALAR:
+"O investimento da consulta é de R$150, e esse valor é totalmente abatido no procedimento."
 
 ---
 
 FLUXO:
 Cumprimentar → entender → explicar → agendar → pedir nome → confirmar.
 
-Respostas curtas (máx 2 frases).
+Respostas curtas (máx 4 frases).
 `
 },
 ...limitedHistory
@@ -356,7 +357,7 @@ res.type("text/xml");
 res.send(`
 <Response>
 <Play>${audioUrl}</Play>
-<Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="3"/>
+<Gather input="speech" action="/processar" method="POST" speechTimeout="auto" timeout="auto"/>
 </Response>
 `);
 });
