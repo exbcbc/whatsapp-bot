@@ -44,14 +44,23 @@ return new Date(new Date().toLocaleString("en-US",{timeZone:"America/Sao_Paulo"}
 }
 
 function nextAvailableDates(){
+
 let dates=[];
 let d=getBrazilDate();
+
+// 🔥 mantém regra dos 5 dias
 d.setDate(d.getDate()+5);
 
 while(dates.length<3){
-if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6){
+
+// ❌ antes: bloqueava sábado
+// if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6)
+
+// ✅ agora: permite sábado
+if(d.getDay()!==0 && d.getDay()!==1){
 dates.push(new Date(d));
 }
+
 d.setDate(d.getDate()+1);
 }
 
