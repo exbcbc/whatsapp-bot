@@ -361,7 +361,6 @@ res.send("ok");
 // ================= VOICE =================
 app.post("/voice", async (req, res) => {
 
-  // 🔥 áudio inicial natural
   const audioUrl = await generateVoice("Olá, sou a Iara assistente virtual do doutor Henrique Mafra. Como posso te ajudar?");
 
   res.type("text/xml");
@@ -373,43 +372,24 @@ app.post("/voice", async (req, res) => {
     input="speech" 
     action="/processar" 
     method="POST" 
+    language="pt-BR"
     speechTimeout="auto" 
     timeout="5"
   />
-
-  <Redirect>/voice</Redirect>
 </Response>
   `);
 });
-
 
 app.post("/processar", async (req, res) => {
 
   try {
 
     const from = req.body.From || "unknown";
-    const fala = req.body.SpeechResult || "";
+    let fala = req.body.SpeechResult || "";
 
-    // 🔥 SE NÃO ENTENDER
-    if (!fala) {
-
-      const audioErro = await generateVoice("Não entendi, pode repetir?");
-
-      return res.send(`
-<Response>
-  <Play>${audioErro}</Play>
-
-  <Gather 
-    input="speech" 
-    action="/processar" 
-    method="POST"
-    speechTimeout="auto" 
-    timeout="5"
-  />
-
-  <Redirect>/voice</Redirect>
-</Response>
-      `);
+    // 🔥 força fallback se vier lixo (tipo inglês quebrado)
+    if (!fala || fala.length < 2) {
+      fala = "quero agendar uma consulta";
     }
 
     if (!conversations[from]) {
@@ -428,10 +408,9 @@ app.post("/processar", async (req, res) => {
 
     user.history.push({ role: "assistant", content: reply });
 
-    // 🔥 áudio natural da resposta
     const audioUrl = await generateVoice(reply);
 
-    // 🔥 envio pro admin
+    // 🔥 envia pro admin
     await sendWhatsAppMessage(ADMIN_PHONE, `📞 ${from}\n${fala}`);
     await sendWhatsAppMessage(ADMIN_PHONE, `🤖 ${reply}`);
 
@@ -443,11 +422,10 @@ app.post("/processar", async (req, res) => {
     input="speech" 
     action="/processar" 
     method="POST" 
+    language="pt-BR"
     speechTimeout="auto" 
     timeout="5"
   />
-
-  <Redirect>/voice</Redirect>
 </Response>
     `);
 
@@ -465,17 +443,15 @@ app.post("/processar", async (req, res) => {
     input="speech" 
     action="/processar" 
     method="POST" 
+    language="pt-BR"
     speechTimeout="auto" 
     timeout="5"
   />
-
-  <Redirect>/voice</Redirect>
 </Response>
     `);
   }
 
 });
-
 // ================= START =================
 
 const PORT=process.env.PORT||8080;
