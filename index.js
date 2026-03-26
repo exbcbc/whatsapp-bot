@@ -309,7 +309,6 @@ return "Pode repetir?";
 }
 
 // ================= WHATSAPP =================
-
 app.post("/whatsapp",async(req,res)=>{
 
 try{
@@ -318,17 +317,27 @@ const from=req.body.From;
 let message=req.body.Body || "";
 const numMedia=parseInt(req.body.NumMedia || 0);
 
+// 🔥 CORREÇÃO AQUI
 if(!conversations[from]){
-conversations[from]={history:[],lastInteraction:Date.now()};
+conversations[from]={
+history:[],
+lastInteraction:Date.now(),
+followUpSent:false,
+agendamentoConfirmado:false
+};
 }
 
 const user=conversations[from];
 
+// limpa histórico antigo
 if(Date.now()-user.lastInteraction>1000*60*30){
 user.history=[];
 }
 
 user.lastInteraction=Date.now();
+
+// 🔥 RESET FOLLOW-UP (ESSENCIAL)
+user.followUpSent=false;
 
 let hasAudio=false;
 
@@ -352,6 +361,7 @@ message=await transcribeAudio(localMedia);
 }
 }
 
+// envia pro admin
 await sendWhatsAppMessage(ADMIN_PHONE,`📩 ${from}\n${message}`);
 
 user.history.push({role:"user",content:message});
@@ -359,6 +369,11 @@ user.history.push({role:"user",content:message});
 const reply=await aiReply(user.history);
 
 user.history.push({role:"assistant",content:reply});
+
+// 🔥 DETECTA SE FECHOU
+if(reply.toLowerCase().includes("agendamento confirmado")){
+user.agendamentoConfirmado=true;
+}
 
 if(hasAudio){
 const audioUrl=await generateVoice(reply);
@@ -472,6 +487,45 @@ app.post("/processar", async (req, res) => {
   }
 
 });
+// ================= FOLLOW-UP =================
+
+async function followUpCheck(){
+
+for(const phone in conversations){
+
+const user = conversations[phone];
+
+// ❌ não manda se já fechou
+if(user.agendamentoConfirmado) continue;
+
+// ❌ não repete
+if(user.followUpSent) continue;
+
+const diff = Date.now() - user.lastInteraction;
+
+// ⏱️ 40 minutos parado
+if(diff > 1000 * 60 * 40){
+
+const msg = `Oi vi que você chamou aqui e não finalizamos seu atendimento.
+
+Quer que eu te encaixe em um horário ou te explico melhor o procedimento?`;
+
+// 🔥 áudio + texto
+const audioUrl = await generateVoice(msg);
+
+await sendWhatsAppMessage(phone, msg);
+await sendWhatsAppMedia(phone, audioUrl);
+
+user.followUpSent = true;
+
+console.log("FOLLOW-UP enviado:", phone);
+
+}
+}
+}
+
+// roda a cada 1 minuto
+setInterval(followUpCheck, 60000);
 // ================= START =================
 
 const PORT=process.env.PORT||8080;
