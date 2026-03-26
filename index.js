@@ -422,16 +422,26 @@ app.post("/processar", async (req, res) => {
     const from = req.body.From || "unknown";
     let fala = req.body.SpeechResult || "";
 
-    // 🔥 força fallback se vier lixo (tipo inglês quebrado)
+    // 🔥 fallback se vier vazio
     if (!fala || fala.length < 2) {
       fala = "quero agendar uma consulta";
     }
 
+    // 🔥 CORREÇÃO PRINCIPAL
     if (!conversations[from]) {
-      conversations[from] = { history: [] };
+      conversations[from] = {
+        history: [],
+        lastInteraction: Date.now(),
+        followUpSent: false,
+        agendamentoConfirmado: false
+      };
     }
 
     const user = conversations[from];
+
+    // 🔥 ATUALIZA INTERAÇÃO (ESSENCIAL)
+    user.lastInteraction = Date.now();
+    user.followUpSent = false;
 
     if (user.history.length > 6) {
       user.history.shift();
@@ -442,6 +452,11 @@ app.post("/processar", async (req, res) => {
     let reply = await aiReply(user.history);
 
     user.history.push({ role: "assistant", content: reply });
+
+    // 🔥 detecta fechamento também por ligação
+    if(reply.toLowerCase().includes("agendamento confirmado")){
+      user.agendamentoConfirmado = true;
+    }
 
     const audioUrl = await generateVoice(reply);
 
@@ -487,6 +502,7 @@ app.post("/processar", async (req, res) => {
   }
 
 });
+
 // ================= FOLLOW-UP =================
 
 async function followUpCheck(){
