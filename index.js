@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import dotenv from "dotenv";
 import axios from "axios";
 import fs from "fs";
+import { MongoClient } from "mongodb";
 
 dotenv.config();
 
@@ -10,6 +11,34 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+// ================= MONGO =================
+
+const client = new MongoClient(process.env.MONGO_URI);
+
+let db;
+
+async function connectDB(){
+await client.connect();
+db = client.db();
+console.log("🔥 Mongo conectado");
+}
+
+connectDB();
+
+async function getUser(phone){
+return await db.collection("conversations").findOne({ phone });
+}
+
+async function saveUser(phone,data){
+await db.collection("conversations").updateOne(
+{ phone },
+{ $set: data },
+{ upsert: true }
+);
+}
+
+// ================= MEDIA =================
 
 if (!fs.existsSync("./media")) {
   fs.mkdirSync("./media");
@@ -25,17 +54,6 @@ const DOMAIN="https://whatsapp-bot-production-5f72.up.railway.app";
 
 const CLINIC_PHONE="whatsapp:+554731700136";
 const ADMIN_PHONE="whatsapp:+5547991812557";
-const INSTAGRAM="@dr.henriquemafra";
-
-const CLINIC_ADDRESS=`
-Clínica WF
-Rua 981, Número 196
-Centro em Balneário Camboriú, Santa Catarina
-`;
-
-const DOCTOR_PHONE="47 99188-6417";
-
-const conversations={};
 
 // ================= DATA =================
 
@@ -48,15 +66,10 @@ function nextAvailableDates(){
 let dates=[];
 let d=getBrazilDate();
 
-// 🔥 mantém regra dos 5 dias
 d.setDate(d.getDate()+5);
 
 while(dates.length<3){
 
-// ❌ antes: bloqueava sábado
-// if(d.getDay()!==0 && d.getDay()!==1 && d.getDay()!==6)
-
-// ✅ agora: permite sábado
 if(d.getDay()!==0 && d.getDay()!==1){
 dates.push(new Date(d));
 }
@@ -91,7 +104,6 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
-
 }catch(e){
 console.log("Erro mensagem:",e.message);
 }
@@ -113,80 +125,8 @@ username:process.env.TWILIO_ACCOUNT_SID,
 password:process.env.TWILIO_AUTH_TOKEN
 }
 });
-
 }catch(e){
 console.log("Erro mídia:",e.message);
-}
-}
-
-// ================= MEDIA =================
-
-async function downloadMedia(url,mediaType){
-try{
-const ext = mediaType.split("/")[1] || "dat";
-const fileName=`media_${Date.now()}.${ext}`;
-const filePath=`./media/${fileName}`;
-
-const response=await axios({
-url,
-method:"GET",
-responseType:"stream",
-auth:{
-username:process.env.TWILIO_ACCOUNT_SID,
-password:process.env.TWILIO_AUTH_TOKEN
-}
-});
-
-const writer=fs.createWriteStream(filePath);
-response.data.pipe(writer);
-
-return new Promise(resolve=>{
-writer.on("finish",()=>{
-resolve(`${DOMAIN}/media/${fileName}`);
-});
-});
-
-}catch(e){
-console.log("Erro download mídia",e.message);
-return null;
-}
-}
-
-async function transcribeAudio(url){
-try{
-const localPath=url.replace(`${DOMAIN}/media/`,`./media/`);
-
-const transcription=await openai.audio.transcriptions.create({
-file:fs.createReadStream(localPath),
-model:"gpt-4o-transcribe"
-});
-
-return transcription.text;
-
-}catch(e){
-console.log("Erro transcrição",e.message);
-return "";
-}
-}
-
-async function generateVoice(text){
-try{
-const speech=await openai.audio.speech.create({
-model:"gpt-4o-mini-tts",
-voice:"nova",
-input:text
-});
-
-const buffer=Buffer.from(await speech.arrayBuffer());
-const file=`reply_${Date.now()}.mp3`;
-
-fs.writeFileSync(`./media/${file}`,buffer);
-
-return `${DOMAIN}/media/${file}`;
-
-}catch(e){
-console.log("Erro voz",e.message);
-return null;
 }
 }
 
@@ -201,99 +141,133 @@ const limitedHistory = history.slice(-6);
 
 const completion = await openai.chat.completions.create({
 model:"gpt-4o-mini",
-max_tokens:80,
-temperature:0.4,
+max_tokens:90,
+temperature:0.3,
 messages:[
 {
 role:"system",
 content:`
 Seu nome é Iara, assistente virtual do Dr Henrique Mafra.
 
-REGRAS:
-
-- NÃO atende domingo nem segunda.
-- Se pedirem esses dias, negar e redirecionar.
-
-- Horários de funcionamento:
-Terça a sexta: 14h às 21h e Sábado: 10h às 14h
-
-- Oferecer inicialmente SOMENTE:
-${formatDate(dates[0])} às 19h30
-${formatDate(dates[1])} às 19h45
-${formatDate(dates[2])} às 20h00
-
-- SE FOR SÁBADO: 
-Oferecer 3 opções dentro do horário da manhã/tarde:
-
-10h30 
-11h30  
-13h00  
-Sempre deixar claro que sábado tem horário reduzido.
+Você deve ser:
+- Objetiva
+- Educada
+- Persuasiva
+- Natural (como uma atendente humana)
 
 ---
 
-- NUNCA inventar novos dias fora desses.
+REGRAS:
 
-- SEMPRE FALAR:
+- NÃO atende domingo nem segunda.
+- Se pedirem esses dias, negar educadamente e redirecionar.
+
+---
+
+HORÁRIOS:
+
+- Terça a sexta: 14h às 21h
+- Sábado: 10h às 14h
+
+---
+
+DISPONIBILIDADE INICIAL (SEMPRE USAR):
+
+${formatDate(dates[0])} às 19h30  
+${formatDate(dates[1])} às 19h45  
+${formatDate(dates[2])} às 20h00  
+
+---
+
+SE FOR SÁBADO:
+
+Oferecer apenas horários dentro do funcionamento:
+
+10h30  
+11h30  
+13h00  
+
+Sempre avisar que sábado tem horário reduzido.
+
+---
+
+IMPORTANTE:
+
+- Nunca inventar datas fora das disponíveis
+- Nunca oferecer domingo ou segunda
+- Nunca dizer que "não tem horário"
+- Sempre tentar encaixar o paciente
+
+---
+
+CONSULTA:
+
+Sempre incluir de forma natural:
+
 "O investimento da consulta é de R$150, e esse valor é totalmente abatido no procedimento."
 
 ---
 
 REGRAS DE AGENDAMENTO:
 
-1. Se o paciente aceitar horário:
-→ pedir o nome completo:
+1. Se o paciente aceitar:
+→ pedir nome completo:
 "Perfeito! Me informe seu nome completo para confirmar o agendamento"
 
-2. Após o paciente enviar o nome:
-→ confirmar o agendamento com dia e horário escolhido
+2. Após nome:
+→ confirmar com dia e horário
 
 → depois dizer:
 "Agendamento confirmado! O Dr. Henrique Mafra entrará em contato com você um dia antes para te lembrar, através do número particular dele"
 
-3. Se NÃO puder à noite:
+---
+
+3. Se não puder à noite:
 → perguntar:
 "Qual horário no período da tarde você prefere?"
 
-4. Quando o paciente disser um horário:
+---
 
-✔ Se estiver dentro do funcionamento:
-→ SEMPRE responder que conseguiu encaixar
-→ usar frase:
+4. Se o paciente sugerir horário:
+
+✔ dentro do funcionamento:
+→ sempre encaixar
+→ dizer:
 "Consegui uma brecha às [HORÁRIO] na [DIA]"
 
-✔ Se estiver FORA:
-→ sugerir outro horário válido
+✔ fora do horário:
+→ sugerir alternativa válida
 
 ---
 
-IMPORTANTE:
+COMPORTAMENTO:
 
-- Nunca dizer que não tem horário à tarde
-- Nunca oferecer horário à noite no sábado
-- Sempre tentar encaixar
-- Sempre parecer natural
--SEMPRE FALAR:
-"O investimento da consulta é de R$150, e esse valor é totalmente abatido no procedimento."
+- Nunca ser robótica
+- Nunca repetir frases idênticas
+- Sempre conduzir para agendamento
+- Sempre manter conversa fluida
 
 ---
 
+INSTAGRAM:
 
-- Sempre que fizer sentido na conversa, principalmente ao final da resposta ou após sugerir horários, incluir de forma natural:
+Quando fizer sentido (não sempre), incluir:
 
-"Para saber mais sobre os procedimentos e acompanhar o dia a dia do Dr. Henrique Mafra, acesse nosso Instagram dr. Henrique Mafra"
+"Para saber mais sobre os procedimentos e acompanhar o dia a dia do Dr. Henrique Mafra, acesse nosso Instagram: @dr.henriquemafra"
 
-- Não repetir em todas as mensagens.
-- Usar principalmente:
-  • após explicar procedimentos
-  • após sugerir horários
-  • após confirmar agendamento
-  
+---
 
 FLUXO:
-Cumprimentar → entender → explicar → agendar → pedir nome → confirmar.
 
-Respostas curtas (máx 4 frases).
+Cumprimentar → entender → explicar → direcionar → agendar → pedir nome → confirmar
+
+---
+
+RESPOSTAS:
+
+- Curtas (máx 4 frases)
+- Claras
+- Humanizadas
 `
 },
 ...limitedHistory
@@ -309,17 +283,20 @@ return "Pode repetir?";
 }
 
 // ================= WHATSAPP =================
+
 app.post("/whatsapp",async(req,res)=>{
 
 try{
 
 const from=req.body.From;
 let message=req.body.Body || "";
-const numMedia=parseInt(req.body.NumMedia || 0);
 
-// 🔥 CORREÇÃO AQUI
-if(!conversations[from]){
-conversations[from]={
+// 🔥 BUSCA NO BANCO
+let user = await getUser(from);
+
+if(!user){
+user={
+phone:from,
 history:[],
 lastInteraction:Date.now(),
 followUpSent:false,
@@ -327,41 +304,14 @@ agendamentoConfirmado:false
 };
 }
 
-const user=conversations[from];
-
 // limpa histórico antigo
 if(Date.now()-user.lastInteraction>1000*60*30){
 user.history=[];
 }
 
 user.lastInteraction=Date.now();
-
-// 🔥 RESET FOLLOW-UP (ESSENCIAL)
 user.followUpSent=false;
 
-let hasAudio=false;
-
-if(numMedia>0){
-
-const mediaUrl=req.body.MediaUrl0;
-const mediaType=req.body.MediaContentType0;
-
-const localMedia=await downloadMedia(mediaUrl,mediaType);
-
-if(localMedia){
-
-await new Promise(r=>setTimeout(r,500));
-await sendWhatsAppMedia(ADMIN_PHONE,localMedia);
-
-if(mediaType.includes("audio")){
-hasAudio=true;
-message=await transcribeAudio(localMedia);
-}
-
-}
-}
-
-// envia pro admin
 await sendWhatsAppMessage(ADMIN_PHONE,`📩 ${from}\n${message}`);
 
 user.history.push({role:"user",content:message});
@@ -370,33 +320,62 @@ const reply=await aiReply(user.history);
 
 user.history.push({role:"assistant",content:reply});
 
-// 🔥 DETECTA SE FECHOU
 if(reply.toLowerCase().includes("agendamento confirmado")){
 user.agendamentoConfirmado=true;
 }
 
-if(hasAudio){
-const audioUrl=await generateVoice(reply);
-await sendWhatsAppMedia(from,audioUrl);
-await sendWhatsAppMedia(ADMIN_PHONE,audioUrl);
-}else{
+await saveUser(from,user);
+
 await sendWhatsAppMessage(from,reply);
 await sendWhatsAppMessage(ADMIN_PHONE,reply);
-}
 
 res.send("ok");
 
 }catch(err){
-console.log("Erro geral:",err.message);
+console.log(err.message);
 res.send("ok");
 }
 
 });
 
+// ================= FOLLOW-UP =================
+
+async function followUpCheck(){
+
+const users = await db.collection("conversations").find().toArray();
+
+for(const user of users){
+
+if(user.agendamentoConfirmado) continue;
+if(user.followUpSent) continue;
+
+const diff = Date.now() - user.lastInteraction;
+
+if(diff > 1000 * 60 * 40){
+
+const msg = `Oi vi que você chamou aqui e não finalizamos seu atendimento.
+
+Quer que eu te encaixe em um horário ou te explico melhor o procedimento?`;
+
+await sendWhatsAppMessage(user.phone, msg);
+
+user.followUpSent = true;
+
+await saveUser(user.phone,user);
+
+console.log("FOLLOW-UP:", user.phone);
+
+}
+}
+}
+
+setInterval(followUpCheck, 60000);
 // ================= VOICE =================
 app.post("/voice", async (req, res) => {
 
-  const audioUrl = await generateVoice("Olá, sou a Iara assistente virtual do doutor Henrique Mafra. Como posso te ajudar?");
+  const audioUrl = await generateVoice(
+    "Olá, sou a Iara, assistente virtual do doutor Henrique Mafra. Como posso te ajudar?"
+  );
 
   res.type("text/xml");
   res.send(`
@@ -411,6 +390,7 @@ app.post("/voice", async (req, res) => {
     speechTimeout="auto" 
     timeout="5"
   />
+
 </Response>
   `);
 });
@@ -427,9 +407,12 @@ app.post("/processar", async (req, res) => {
       fala = "quero agendar uma consulta";
     }
 
-    // 🔥 CORREÇÃO PRINCIPAL
-    if (!conversations[from]) {
-      conversations[from] = {
+    // 🔥 BUSCA NO BANCO
+    let user = await getUser(from);
+
+    if (!user) {
+      user = {
+        phone: from,
         history: [],
         lastInteraction: Date.now(),
         followUpSent: false,
@@ -437,12 +420,11 @@ app.post("/processar", async (req, res) => {
       };
     }
 
-    const user = conversations[from];
-
-    // 🔥 ATUALIZA INTERAÇÃO (ESSENCIAL)
+    // 🔥 ATUALIZA INTERAÇÃO
     user.lastInteraction = Date.now();
     user.followUpSent = false;
 
+    // limita histórico
     if (user.history.length > 6) {
       user.history.shift();
     }
@@ -453,10 +435,13 @@ app.post("/processar", async (req, res) => {
 
     user.history.push({ role: "assistant", content: reply });
 
-    // 🔥 detecta fechamento também por ligação
-    if(reply.toLowerCase().includes("agendamento confirmado")){
+    // 🔥 detecta fechamento
+    if (reply.toLowerCase().includes("agendamento confirmado")) {
       user.agendamentoConfirmado = true;
     }
+
+    // 🔥 SALVA NO BANCO
+    await saveUser(from, user);
 
     const audioUrl = await generateVoice(reply);
 
@@ -503,45 +488,6 @@ app.post("/processar", async (req, res) => {
 
 });
 
-// ================= FOLLOW-UP =================
-
-async function followUpCheck(){
-
-for(const phone in conversations){
-
-const user = conversations[phone];
-
-// ❌ não manda se já fechou
-if(user.agendamentoConfirmado) continue;
-
-// ❌ não repete
-if(user.followUpSent) continue;
-
-const diff = Date.now() - user.lastInteraction;
-
-// ⏱️ 40 minutos parado
-if(diff > 1000 * 60 * 40){
-
-const msg = `Oi vi que você chamou aqui e não finalizamos seu atendimento.
-
-Quer que eu te encaixe em um horário ou te explico melhor o procedimento?`;
-
-// 🔥 áudio + texto
-const audioUrl = await generateVoice(msg);
-
-await sendWhatsAppMessage(phone, msg);
-await sendWhatsAppMedia(phone, audioUrl);
-
-user.followUpSent = true;
-
-console.log("FOLLOW-UP enviado:", phone);
-
-}
-}
-}
-
-// roda a cada 1 minuto
-setInterval(followUpCheck, 60000);
 // ================= START =================
 
 const PORT=process.env.PORT||8080;
