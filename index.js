@@ -332,15 +332,9 @@ await sendWhatsAppMessage(ADMIN_PHONE,reply);
 res.send("ok");
 
 }catch(err){
-console.log(err.message);
-res.send("ok");
-}
+console.lasync function followUpCheck(){
 
-});
-
-// ================= FOLLOW-UP =================
-
-async function followUpCheck(){
+if(!db) return; // 🔥 evita erro se mongo não conectou
 
 const users = await db.collection("conversations").find().toArray();
 
@@ -367,18 +361,106 @@ console.log("FOLLOW-UP:", user.phone);
 
 }
 }
+}og(err.message);
+res.send("ok");
 }
 
+});
+
+// ================= FOLLOW-UP =================
+
+async function followUpCheck(){
+
+// 🔥 proteção caso mongo ainda não conectou
+if(!db) return;
+
+const users = await db.collection("conversations").find().toArray();
+
+for(const user of users){
+
+// ❌ já fechou → não manda
+if(user.agendamentoConfirmado) continue;
+
+// ❌ já fez follow-up total
+if(user.followUpLevel >= 2) continue;
+
+const diff = Date.now() - user.lastInteraction;
+
+// ================= ETAPA 1 (40 MIN) =================
+if(!user.followUpLevel && diff > 1000 * 60 * 40){
+
+const msg = `Oi 😊 vi que você chamou aqui e não finalizamos seu atendimento.
+
+Se quiser, posso te encaixar em um horário ou te explicar melhor o procedimento.`;
+
+await sendWhatsAppMessage(user.phone, msg);
+
+// atualiza nível
+user.followUpLevel = 1;
+await saveUser(user.phone, user);
+
+console.log("FOLLOW-UP 1:", user.phone);
+
+}
+
+// ================= ETAPA 2 (2 HORAS) =================
+else if(user.followUpLevel === 1 && diff > 1000 * 60 * 120){
+
+const msg = `Só passando pra te avisar 😊
+
+Tenho alguns horários disponíveis e consigo te encaixar ainda essa semana. Quer que eu veja pra você?`;
+
+await sendWhatsAppMessage(user.phone, msg);
+
+// atualiza nível
+user.followUpLevel = 2;
+await saveUser(user.phone, user);
+
+console.log("FOLLOW-UP 2:", user.phone);
+
+}
+
+}
+}
+
+// roda a cada 1 minuto
 setInterval(followUpCheck, 60000);
+
+
 // ================= VOICE =================
+
+// 🔥 função de voz (necessária)
+async function generateVoice(text){
+try{
+const speech = await openai.audio.speech.create({
+model:"gpt-4o-mini-tts",
+voice:"nova",
+input:text
+});
+
+const buffer = Buffer.from(await speech.arrayBuffer());
+const file = `reply_${Date.now()}.mp3`;
+
+fs.writeFileSync(`./media/${file}`, buffer);
+
+return `${DOMAIN}/media/${file}`;
+
+}catch(e){
+console.log("Erro voz:", e.message);
+return null;
+}
+}
+
+// ================= INÍCIO DA LIGAÇÃO =================
+
 app.post("/voice", async (req, res) => {
 
-  const audioUrl = await generateVoice(
-    "Olá, sou a Iara, assistente virtual do doutor Henrique Mafra. Como posso te ajudar?"
-  );
+const audioUrl = await generateVoice(
+"Olá, sou a Iara, assistente virtual do doutor Henrique Mafra. Como posso te ajudar?"
+);
 
-  res.type("text/xml");
-  res.send(`
+res.type("text/xml");
+res.send(`
 <Response>
   <Play>${audioUrl}</Play>
 
@@ -388,68 +470,74 @@ app.post("/voice", async (req, res) => {
     method="POST" 
     language="pt-BR"
     speechTimeout="auto" 
-    timeout="5"
+    timeout="6"
   />
-
 </Response>
-  `);
+`);
 });
+
+// ================= PROCESSAMENTO =================
 
 app.post("/processar", async (req, res) => {
 
-  try {
+try {
 
-    const from = req.body.From || "unknown";
-    let fala = req.body.SpeechResult || "";
+const from = req.body.From || "unknown";
+let fala = req.body.SpeechResult || "";
 
-    // 🔥 fallback se vier vazio
-    if (!fala || fala.length < 2) {
-      fala = "quero agendar uma consulta";
-    }
+// 🔥 fallback inteligente
+if (!fala || fala.length < 2) {
+fala = "quero agendar uma consulta";
+}
 
-    // 🔥 BUSCA NO BANCO
-    let user = await getUser(from);
+// 🔥 BUSCA NO BANCO
+let user = await getUser(from);
 
-    if (!user) {
-      user = {
-        phone: from,
-        history: [],
-        lastInteraction: Date.now(),
-        followUpSent: false,
-        agendamentoConfirmado: false
-      };
-    }
+if (!user) {
+user = {
+phone: from,
+history: [],
+lastInteraction: Date.now(),
+followUpSent: false,
+agendamentoConfirmado: false
+};
+}
 
-    // 🔥 ATUALIZA INTERAÇÃO
-    user.lastInteraction = Date.now();
-    user.followUpSent = false;
+// 🔥 ATUALIZA INTERAÇÃO
+user.lastInteraction = Date.now();
+user.followUpSent = false;
 
-    // limita histórico
-    if (user.history.length > 6) {
-      user.history.shift();
-    }
+// 🔥 limita histórico
+if (user.history.length > 6) {
+user.history.shift();
+}
 
-    user.history.push({ role: "user", content: fala });
+// salva fala
+user.history.push({ role: "user", content: fala });
 
-    let reply = await aiReply(user.history);
+// IA responde
+let reply = await aiReply(user.history);
 
-    user.history.push({ role: "assistant", content: reply });
+// salva resposta
+user.history.push({ role: "assistant", content: reply });
 
-    // 🔥 detecta fechamento
-    if (reply.toLowerCase().includes("agendamento confirmado")) {
-      user.agendamentoConfirmado = true;
-    }
+// 🔥 detecta fechamento
+if (reply.toLowerCase().includes("agendamento confirmado")) {
+user.agendamentoConfirmado = true;
+}
 
-    // 🔥 SALVA NO BANCO
-    await saveUser(from, user);
+// 🔥 SALVA NO BANCO
+await saveUser(from, user);
 
-    const audioUrl = await generateVoice(reply);
+// 🔥 gera áudio
+const audioUrl = await generateVoice(reply);
 
-    // 🔥 envia pro admin
-    await sendWhatsAppMessage(ADMIN_PHONE, `📞 ${from}\n${fala}`);
-    await sendWhatsAppMessage(ADMIN_PHONE, `🤖 ${reply}`);
+// 🔥 envia pro admin
+await sendWhatsAppMessage(ADMIN_PHONE, `📞 ${from}\n${fala}`);
+await sendWhatsAppMessage(ADMIN_PHONE, `🤖 ${reply}`);
 
-    res.send(`
+// 🔥 resposta da ligação
+res.send(`
 <Response>
   <Play>${audioUrl}</Play>
 
@@ -459,18 +547,21 @@ app.post("/processar", async (req, res) => {
     method="POST" 
     language="pt-BR"
     speechTimeout="auto" 
-    timeout="5"
+    timeout="6"
   />
 </Response>
-    `);
+`);
 
-  } catch (e) {
+} catch (e) {
 
-    console.log("Erro voice:", e.message);
+console.log("Erro voice:", e.message);
 
-    const audioErro = await generateVoice("Tive um erro aqui, pode repetir?");
+// fallback com voz
+const audioErro = await generateVoice(
+"Tive um erro aqui, pode repetir?"
+);
 
-    res.send(`
+res.send(`
 <Response>
   <Play>${audioErro}</Play>
 
@@ -480,11 +571,11 @@ app.post("/processar", async (req, res) => {
     method="POST" 
     language="pt-BR"
     speechTimeout="auto" 
-    timeout="5"
+    timeout="6"
   />
 </Response>
-    `);
-  }
+`);
+}
 
 });
 
