@@ -389,7 +389,7 @@ const diff = Date.now() - user.lastInteraction;
 // ================= ETAPA 1 (40 MIN) =================
 if(!user.followUpLevel && diff > 1000 * 60 * 40){
 
-const msg = `Oi 😊 vi que você chamou aqui e não finalizamos seu atendimento.
+const msg = `Oi vi que você chamou aqui e não finalizamos seu atendimento.
 
 Se quiser, posso te encaixar em um horário ou te explicar melhor o procedimento.`;
 
@@ -406,7 +406,7 @@ console.log("FOLLOW-UP 1:", user.phone);
 // ================= ETAPA 2 (2 HORAS) =================
 else if(user.followUpLevel === 1 && diff > 1000 * 60 * 120){
 
-const msg = `Só passando pra te avisar 😊
+const msg = `Só passando pra te avisar!
 
 Tenho alguns horários disponíveis e consigo te encaixar ainda essa semana. Quer que eu veja pra você?`;
 
